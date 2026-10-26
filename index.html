@@ -38,9 +38,6 @@
       height: 2px;
       transform-origin: center;
     }
-    .sniper-scope {
-      background: radial-gradient(circle at center, transparent 30%, black 35%, black 100%);
-    }
     ::-webkit-scrollbar {
       width: 4px;
     }
@@ -87,6 +84,9 @@
       <span id="hud-timer">10:00</span>
     </div>
   </div>
+
+  <!-- KILL FEED -->
+  <div id="killfeed" class="absolute top-6 right-6 pointer-events-none flex flex-col items-end gap-2 z-20"></div>
 
   <!-- HUD BOTTOM BAR -->
   <div id="hud-bottom" class="absolute bottom-6 left-6 right-6 pointer-events-none flex justify-between items-end z-10 hidden">
@@ -179,6 +179,14 @@
     </div>
   </div>
 
+  <!-- DEATH SCREEN -->
+  <div id="death-screen" class="absolute inset-0 bg-red-950/40 backdrop-blur-sm hidden items-center justify-center z-40">
+    <div class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl text-center shadow-2xl flex flex-col gap-4 max-w-sm w-full">
+      <h2 class="text-2xl font-black text-red-500 tracking-wider">YOU DIED</h2>
+      <p class="text-xs text-zinc-400">Respawning in <span id="respawn-timer" class="font-bold text-white">3</span>s...</p>
+    </div>
+  </div>
+
   <!-- IN-GAME PAUSE MENU -->
   <div id="pause-menu" class="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm hidden items-center justify-center z-50">
     <div class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col gap-4 text-center">
@@ -195,6 +203,10 @@
     let selectedTeam = 'blue';
     let selectedMap = 'warehouse';
     let inGame = false;
+    let myHp = 100;
+    let isDead = false;
+    let blueScore = 0;
+    let redScore = 0;
 
     function setTeam(team) {
       selectedTeam = team;
@@ -240,6 +252,10 @@
       peer.on('connection', (c) => {
         connections.push(c);
         setupConnection(c);
+        c.on('close', () => {
+          connections = connections.filter(item => item !== c);
+          removePlayer(c.peer);
+        });
       });
     }
 
@@ -269,11 +285,15 @@
         }
       });
 
+      c.on('close', () => {
+        if(!isHost) quitToMenu();
+      });
+
       c.on('data', (data) => {
         if(isHost) {
           if(data.type === 'JOIN') {
             players[c.peer] = { name: data.name, team: data.team, hp: 100, score: 0, x: 0, z: 0, yaw: 0 };
-            broadcast({ type: 'SYNC_PLAYERS', players, map: selectedMap });
+            broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
             updateLobbyUI();
           } else if(data.type === 'PLAYER_POS') {
             if(players[data.id]) {
@@ -282,15 +302,37 @@
               players[data.id].z = data.z;
               players[data.id].yaw = data.yaw;
             }
-            // Relay position to all other connected peers
-            connections.forEach(client => {
-              if(client !== c) client.send(data);
-            });
+            broadcastExcluding(data, c);
+          } else if(data.type === 'PLAYER_HIT') {
+            // Host processes damage
+            const target = players[data.targetId];
+            if(target && target.hp > 0) {
+              target.hp -= data.damage;
+              if(target.hp <= 0) {
+                target.hp = 0;
+                const killer = players[data.shooterId];
+                if(killer) {
+                  killer.score++;
+                  if(killer.team === 'blue') blueScore++;
+                  else redScore++;
+                  broadcast({ type: 'KILL_EVENT', killer: killer.name, victim: target.name, blueScore, redScore });
+                }
+              }
+              broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
+            }
           }
         } else {
-          if(data.type === 'SYNC_PLAYERS') {
+          if(data.type === 'SYNC_STATE') {
             players = data.players;
             if(data.map) selectedMap = data.map;
+            blueScore = data.blueScore || 0;
+            redScore = data.redScore || 0;
+            document.getElementById('hud-blue-score').innerText = blueScore;
+            document.getElementById('hud-red-score').innerText = redScore;
+            if(players[myId]) {
+              myHp = players[myId].hp;
+              document.getElementById('hud-hp').innerText = myHp;
+            }
             updateLobbyUI();
           } else if(data.type === 'START_GAME') {
             if(data.map) selectedMap = data.map;
@@ -302,6 +344,8 @@
               players[data.id].z = data.z;
               players[data.id].yaw = data.yaw;
             }
+          } else if(data.type === 'KILL_EVENT') {
+            showKillfeedMessage(data.killer, data.victim);
           }
         }
       });
@@ -309,6 +353,20 @@
 
     function broadcast(data) {
       connections.forEach(c => c.send(data));
+    }
+
+    function broadcastExcluding(data, excludeClient) {
+      connections.forEach(c => {
+        if(c !== excludeClient) c.send(data);
+      });
+    }
+
+    function removePlayer(peerId) {
+      if(players[peerId]) {
+        delete players[peerId];
+        broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
+        updateLobbyUI();
+      }
     }
 
     function showLobby() {
@@ -355,9 +413,13 @@
 
     function startGameUI() {
       inGame = true;
+      isDead = false;
+      myHp = 100;
       document.getElementById('menu-screen').classList.add('hidden');
       document.getElementById('lobby-screen').classList.remove('flex');
       document.getElementById('lobby-screen').classList.add('hidden');
+      document.getElementById('death-screen').classList.remove('flex');
+      document.getElementById('death-screen').classList.add('hidden');
       document.getElementById('crosshair').classList.remove('hidden');
       document.getElementById('hud-top').classList.remove('hidden');
       document.getElementById('hud-bottom').classList.remove('hidden');
@@ -379,6 +441,8 @@
       if(peer) peer.destroy();
       document.getElementById('pause-menu').classList.remove('flex');
       document.getElementById('pause-menu').classList.add('hidden');
+      document.getElementById('death-screen').classList.remove('flex');
+      document.getElementById('death-screen').classList.add('hidden');
       document.getElementById('crosshair').classList.add('hidden');
       document.getElementById('hud-top').classList.add('hidden');
       document.getElementById('hud-bottom').classList.add('hidden');
@@ -387,8 +451,17 @@
       document.getElementById('btn-host').innerHTML = '<i class="fa-solid fa-server"></i> Create Lobby (Host)';
     }
 
+    function showKillfeedMessage(killer, victim) {
+      const feed = document.getElementById('killfeed');
+      const item = document.createElement('div');
+      item.className = "bg-zinc-900/90 border border-zinc-800 px-4 py-1.5 rounded-lg text-xs font-semibold text-zinc-300 shadow-lg animate-fade-in";
+      item.innerHTML = `<span class="text-blue-400">${killer}</span> <span class="text-zinc-500">eliminated</span> <span class="text-red-400">${victim}</span>`;
+      feed.appendChild(item);
+      setTimeout(() => { item.remove(); }, 3500);
+    }
+
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && inGame) {
+      if (e.key === 'Escape' && inGame && !isDead) {
         const pauseMenu = document.getElementById('pause-menu');
         if (pauseMenu.classList.contains('hidden')) {
           pauseMenu.classList.remove('hidden');
@@ -471,7 +544,7 @@
         targets.push(mesh);
       }
 
-      camera.position.set(0, 1.6, 10);
+      camera.position.set((Math.random() - 0.5) * 40, 1.6, (Math.random() - 0.5) * 40);
       
       const gunGroup = new THREE.Group();
       const bodyMat = new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8, roughness: 0.2 });
@@ -493,13 +566,12 @@
       camera.add(gunGroup);
       scene.add(camera);
 
-      // Remote Player Meshes container dictionary
       const remoteMeshes = {};
 
       const canvas = document.getElementById('game-canvas');
       canvas.addEventListener('click', () => {
         const pauseMenu = document.getElementById('pause-menu');
-        if (pauseMenu.classList.contains('hidden')) {
+        if (pauseMenu.classList.contains('hidden') && !isDead) {
           canvas.requestPointerLock();
         }
       });
@@ -507,7 +579,7 @@
       let yaw = 0;
       let pitch = 0;
       document.addEventListener('mousemove', (e) => {
-        if(document.pointerLockElement !== canvas || !inGame) return;
+        if(document.pointerLockElement !== canvas || !inGame || isDead) return;
         const sensitivity = 0.002;
         yaw -= e.movementX * sensitivity;
         pitch -= e.movementY * sensitivity;
@@ -526,7 +598,7 @@
       let isReloading = false;
 
       document.addEventListener('keydown', (e) => {
-        if(!inGame) return;
+        if(!inGame || isDead) return;
         if(e.key === 'w' || e.key === 'W') keys.w = true;
         if(e.key === 'a' || e.key === 'A') keys.a = true;
         if(e.key === 's' || e.key === 'S') keys.s = true;
@@ -549,7 +621,7 @@
       let lastShotTime = 0;
 
       window.addEventListener('mousedown', (e) => {
-        if(document.pointerLockElement !== canvas || !inGame) return;
+        if(document.pointerLockElement !== canvas || !inGame || isDead) return;
         if(e.button === 0) shootWeapon();
       });
 
@@ -568,14 +640,43 @@
         muzzleFlash.intensity = 3;
         setTimeout(() => { muzzleFlash.intensity = 0; }, 40);
 
-        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-        const intersects = raycaster.intersectObjects(targets);
+        // Raycast against obstacles & remote player meshes
+        const playerObjects = Object.values(remoteMeshes);
+        const intersects = raycaster.intersectObjects(targets.concat(playerObjects));
         
         if(intersects.length > 0) {
           showHitmarker();
-          const target = intersects[0].object;
-          target.material.color.setHex(0xef4444);
-          setTimeout(() => { target.material.color.setHex(boxColor1); }, 150);
+          const hitObj = intersects[0].object;
+          if(hitObj.userData && hitObj.userData.playerId) {
+            // Hit a player
+            const targetId = hitObj.userData.playerId;
+            const hitData = { type: 'PLAYER_HIT', targetId: targetId, shooterId: myId, damage: 25 };
+            if(isHost) {
+              // Host handles directly
+              const target = players[targetId];
+              if(target && target.hp > 0) {
+                target.hp -= 25;
+                if(target.hp <= 0) {
+                  target.hp = 0;
+                  const killer = players[myId];
+                  if(killer) {
+                    killer.score++;
+                    if(killer.team === 'blue') blueScore++;
+                    else redScore++;
+                    broadcast({ type: 'KILL_EVENT', killer: killer.name, victim: target.name, blueScore, redScore });
+                    showKillfeedMessage(killer.name, target.name);
+                  }
+                }
+                broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
+              }
+            } else if(conn && conn.open) {
+              conn.send(hitData);
+            }
+          } else {
+            // Hit box obstacle
+            hitObj.material.color.setHex(0xef4444);
+            setTimeout(() => { hitObj.material.color.setHex(boxColor1); }, 150);
+          }
         }
       }
 
@@ -602,67 +703,116 @@
         setTimeout(() => { icon.style.opacity = '0'; }, 100);
       }
 
+      function triggerDeath() {
+        isDead = true;
+        document.exitPointerLock();
+        document.getElementById('death-screen').classList.remove('hidden');
+        document.getElementById('death-screen').classList.add('flex');
+        
+        let secondsLeft = 3;
+        document.getElementById('respawn-timer').innerText = secondsLeft;
+        const countdown = setInterval(() => {
+          secondsLeft--;
+          document.getElementById('respawn-timer').innerText = secondsLeft;
+          if(secondsLeft <= 0) {
+            clearInterval(countdown);
+            respawnPlayer();
+          }
+        }, 1000);
+      }
+
+      function respawnPlayer() {
+        isDead = false;
+        myHp = 100;
+        document.getElementById('hud-hp').innerText = myHp;
+        document.getElementById('death-screen').classList.remove('flex');
+        document.getElementById('death-screen').classList.add('hidden');
+        camera.position.set((Math.random() - 0.5) * 40, 1.6, (Math.random() - 0.5) * 40);
+        canvas.requestPointerLock();
+      }
+
       let frameCount = 0;
 
       function animate() {
         if (!inGame) return;
         requestAnimationFrame(animate);
 
-        gunGroup.position.z += (-0.45 - gunGroup.position.z) * 0.15;
-        gunGroup.rotation.x += (0 - gunGroup.rotation.x) * 0.15;
+        if (!isDead) {
+          gunGroup.position.z += (-0.45 - gunGroup.position.z) * 0.15;
+          gunGroup.rotation.x += (0 - gunGroup.rotation.x) * 0.15;
 
-        const speed = keys.shift ? 0.16 : 0.095;
-        const moveDir = new THREE.Vector3();
-        if(keys.w) moveDir.z -= 1;
-        if(keys.s) moveDir.z += 1;
-        if(keys.a) moveDir.x -= 1;
-        if(keys.d) moveDir.x += 1;
-        moveDir.normalize();
-        moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+          const speed = keys.shift ? 0.16 : 0.095;
+          const moveDir = new THREE.Vector3();
+          if(keys.w) moveDir.z -= 1;
+          if(keys.s) moveDir.z += 1;
+          if(keys.a) moveDir.x -= 1;
+          if(keys.d) moveDir.x += 1;
+          moveDir.normalize();
+          moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
 
-        camera.position.x += moveDir.x * speed;
-        camera.position.z += moveDir.z * speed;
+          camera.position.x += moveDir.x * speed;
+          camera.position.z += moveDir.z * speed;
 
-        if(keys.space && isGrounded) {
-          velocityY = 0.18;
-          isGrounded = false;
+          if(keys.space && isGrounded) {
+            velocityY = 0.18;
+            isGrounded = false;
+          }
+
+          camera.position.y += velocityY;
+          if(camera.position.y > 1.6) {
+            velocityY -= 0.009;
+          } else {
+            camera.position.y = 1.6;
+            velocityY = 0;
+            isGrounded = true;
+          }
+
+          camera.position.x = Math.max(-55, Math.min(55, camera.position.x));
+          camera.position.z = Math.max(-55, Math.min(55, camera.position.z));
         }
 
-        camera.position.y += velocityY;
-        if(camera.position.y > 1.6) {
-          velocityY -= 0.009;
-        } else {
-          camera.position.y = 1.6;
-          velocityY = 0;
-          isGrounded = true;
-        }
-
-        camera.position.x = Math.max(-55, Math.min(55, camera.position.x));
-        camera.position.z = Math.max(-55, Math.min(55, camera.position.z));
-
-        // Broadcast player position to peers every 3 frames
+        // Broadcast position & check HP sync
         frameCount++;
-        if (frameCount % 3 === 0) {
+        if (frameCount % 3 === 0 && !isDead) {
           const posData = { type: 'PLAYER_POS', id: myId, x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: yaw };
           if (isHost) {
             connections.forEach(c => c.send(posData));
+            if(players[myId]) {
+              players[myId].hp = myHp;
+              players[myId].x = camera.position.x;
+              players[myId].y = camera.position.y;
+              players[myId].z = camera.position.z;
+              players[myId].yaw = yaw;
+            }
           } else if (conn && conn.open) {
             conn.send(posData);
           }
         }
 
-        // Render / Update other players' 3D meshes in the scene
-        Object.keys(players).forEach(id => {
+        // Check local death state
+        if (players[myId] && players[myId].hp <= 0 && !isDead) {
+          triggerDeath();
+        }
+
+        // Render remote players & cleanup disconnected ones
+        const activeIds = Object.keys(players);
+        Object.keys(remoteMeshes).forEach(id => {
+          if (!activeIds.includes(id)) {
+            scene.remove(remoteMeshes[id]);
+            delete remoteMeshes[id];
+          }
+        });
+
+        activeIds.forEach(id => {
           if (id === myId) return;
           const p = players[id];
           if (!remoteMeshes[id]) {
-            // Create a 3D box/capsule representing the remote player
             const pMat = new THREE.MeshStandardMaterial({ color: p.team === 'blue' ? 0x3b82f6 : 0xef4444 });
             const pMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), pMat);
+            pMesh.userData = { playerId: id };
             scene.add(pMesh);
             remoteMeshes[id] = pMesh;
           }
-          // Update position smoothly
           if (p.x !== undefined && p.z !== undefined) {
             remoteMeshes[id].position.set(p.x, p.y || 1.6, p.z);
             if (p.yaw !== undefined) remoteMeshes[id].rotation.y = p.yaw;
