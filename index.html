@@ -468,4 +468,116 @@
       });
 
       document.addEventListener('keyup', (e) => {
-        if(e.key === '
+        if(e.key === 'w' || e.key === 'W') keys.w = false;
+        if(e.key === 'a' || e.key === 'A') keys.a = false;
+        if(e.key === 's' || e.key === 'S') keys.s = false;
+        if(e.key === 'd' || e.key === 'D') keys.d = false;
+        if(e.code === 'Space') keys.space = false;
+        if(e.key === 'Shift') keys.shift = false;
+      });
+
+      const raycaster = new THREE.Raycaster();
+      let lastShotTime = 0;
+
+      window.addEventListener('mousedown', (e) => {
+        if(document.pointerLockElement !== canvas) return;
+        if(e.button === 0) shootWeapon();
+      });
+
+      function shootWeapon() {
+        if(ammo <= 0 || isReloading) return;
+        const now = performance.now();
+        if(now - lastShotTime < 120) return;
+        lastShotTime = now;
+
+        ammo--;
+        document.getElementById('hud-ammo').innerText = ammo;
+        playShootSound();
+
+        gunGroup.position.z = -0.38;
+        gunGroup.rotation.x = 0.15;
+        muzzleFlash.intensity = 3;
+        setTimeout(() => { muzzleFlash.intensity = 0; }, 40);
+
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        const intersects = raycaster.intersectObjects(targets);
+        
+        if(intersects.length > 0) {
+          showHitmarker();
+          const target = intersects[0].object;
+          target.material.color.setHex(0xef4444);
+          setTimeout(() => { target.material.color.setHex(boxColor1); }, 150);
+        }
+      }
+
+      function reloadWeapon() {
+        if(isReloading || ammo === 30 || reserve <= 0) return;
+        isReloading = true;
+        document.getElementById('hud-weapon-name').innerText = "Reloading...";
+        
+        setTimeout(() => {
+          const needed = 30 - ammo;
+          const added = Math.min(needed, reserve);
+          ammo += added;
+          reserve -= added;
+          document.getElementById('hud-ammo').innerText = ammo;
+          document.getElementById('hud-reserve').innerText = reserve;
+          document.getElementById('hud-weapon-name').innerText = "Assault Rifle";
+          isReloading = false;
+        }, 1200);
+      }
+
+      function showHitmarker() {
+        const icon = document.getElementById('hitmarker-icon');
+        icon.style.opacity = '1';
+        setTimeout(() => { icon.style.opacity = '0'; }, 100);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        gunGroup.position.z += (-0.45 - gunGroup.position.z) * 0.15;
+        gunGroup.rotation.x += (0 - gunGroup.rotation.x) * 0.15;
+
+        const speed = keys.shift ? 0.16 : 0.095;
+        const moveDir = new THREE.Vector3();
+        if(keys.w) moveDir.z -= 1;
+        if(keys.s) moveDir.z += 1;
+        if(keys.a) moveDir.x -= 1;
+        if(keys.d) moveDir.x += 1;
+        moveDir.normalize();
+        moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+
+        camera.position.x += moveDir.x * speed;
+        camera.position.z += moveDir.z * speed;
+
+        if(keys.space && isGrounded) {
+          velocityY = 0.18;
+          isGrounded = false;
+        }
+
+        camera.position.y += velocityY;
+        if(camera.position.y > 1.6) {
+          velocityY -= 0.009;
+        } else {
+          camera.position.y = 1.6;
+          velocityY = 0;
+          isGrounded = true;
+        }
+
+        camera.position.x = Math.max(-55, Math.min(55, camera.position.x));
+        camera.position.z = Math.max(-55, Math.min(55, camera.position.z));
+
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+  </script>
+</body>
+</html>
