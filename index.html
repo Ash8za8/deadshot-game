@@ -179,10 +179,22 @@
     </div>
   </div>
 
+  <!-- IN-GAME PAUSE MENU -->
+  <div id="pause-menu" class="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm hidden items-center justify-center z-50">
+    <div class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col gap-4 text-center">
+      <h2 class="text-2xl font-black text-white tracking-wider">GAME PAUSED</h2>
+      <div class="flex flex-col gap-3 mt-2">
+        <button onclick="resumeGame()" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all cursor-pointer">Resume Game</button>
+        <button onclick="quitToMenu()" class="w-full py-3 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-400 font-bold rounded-xl transition-all cursor-pointer">Quit to Main Menu</button>
+      </div>
+    </div>
+  </div>
+
   <!-- SCRIPT -->
   <script>
     let selectedTeam = 'blue';
     let selectedMap = 'warehouse';
+    let inGame = false;
 
     function setTeam(team) {
       selectedTeam = team;
@@ -215,7 +227,7 @@
       peer.on('open', (id) => {
         myId = peer.id;
         isHost = true;
-        players[myId] = { name, team: selectedTeam, hp: 100, score: 0 };
+        players[myId] = { name, team: selectedTeam, hp: 100, score: 0, x: 0, z: 0, yaw: 0 };
         showLobby();
       });
 
@@ -260,9 +272,20 @@
       c.on('data', (data) => {
         if(isHost) {
           if(data.type === 'JOIN') {
-            players[c.peer] = { name: data.name, team: data.team, hp: 100, score: 0 };
+            players[c.peer] = { name: data.name, team: data.team, hp: 100, score: 0, x: 0, z: 0, yaw: 0 };
             broadcast({ type: 'SYNC_PLAYERS', players, map: selectedMap });
             updateLobbyUI();
+          } else if(data.type === 'PLAYER_POS') {
+            if(players[data.id]) {
+              players[data.id].x = data.x;
+              players[data.id].y = data.y;
+              players[data.id].z = data.z;
+              players[data.id].yaw = data.yaw;
+            }
+            // Relay position to all other connected peers
+            connections.forEach(client => {
+              if(client !== c) client.send(data);
+            });
           }
         } else {
           if(data.type === 'SYNC_PLAYERS') {
@@ -272,6 +295,13 @@
           } else if(data.type === 'START_GAME') {
             if(data.map) selectedMap = data.map;
             startGameUI();
+          } else if(data.type === 'PLAYER_POS') {
+            if(players[data.id]) {
+              players[data.id].x = data.x;
+              players[data.id].y = data.y;
+              players[data.id].z = data.z;
+              players[data.id].yaw = data.yaw;
+            }
           }
         }
       });
@@ -308,13 +338,13 @@
       startGameUI();
     }
 
-    let matchTime = 600; // 10 minutes in seconds
+    let matchTime = 600;
     let timerInterval = null;
 
     function startTimer() {
       clearInterval(timerInterval);
       timerInterval = setInterval(() => {
-        if (matchTime > 0) {
+        if (matchTime > 0 && inGame) {
           matchTime--;
           const mins = Math.floor(matchTime / 60);
           const secs = matchTime % 60;
@@ -324,6 +354,8 @@
     }
 
     function startGameUI() {
+      inGame = true;
+      document.getElementById('menu-screen').classList.add('hidden');
       document.getElementById('lobby-screen').classList.remove('flex');
       document.getElementById('lobby-screen').classList.add('hidden');
       document.getElementById('crosshair').classList.remove('hidden');
@@ -333,6 +365,39 @@
       startTimer();
       initThreeJS(selectedMap);
     }
+
+    function resumeGame() {
+      document.getElementById('pause-menu').classList.remove('flex');
+      document.getElementById('pause-menu').classList.add('hidden');
+      const canvas = document.getElementById('game-canvas');
+      canvas.requestPointerLock();
+    }
+
+    function quitToMenu() {
+      inGame = false;
+      clearInterval(timerInterval);
+      if(peer) peer.destroy();
+      document.getElementById('pause-menu').classList.remove('flex');
+      document.getElementById('pause-menu').classList.add('hidden');
+      document.getElementById('crosshair').classList.add('hidden');
+      document.getElementById('hud-top').classList.add('hidden');
+      document.getElementById('hud-bottom').classList.add('hidden');
+      document.getElementById('hitmarker-container').classList.add('hidden');
+      document.getElementById('menu-screen').classList.remove('hidden');
+      document.getElementById('btn-host').innerHTML = '<i class="fa-solid fa-server"></i> Create Lobby (Host)';
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && inGame) {
+        const pauseMenu = document.getElementById('pause-menu');
+        if (pauseMenu.classList.contains('hidden')) {
+          pauseMenu.classList.remove('hidden');
+          pauseMenu.classList.add('flex');
+        } else {
+          resumeGame();
+        }
+      }
+    });
 
     // Sound Synthesizer
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -382,7 +447,6 @@
       dirLight.position.set(30, 50, 30);
       scene.add(dirLight);
 
-      // Grid Floor
       const gridHelper = new THREE.GridHelper(120, 40, boxColor1, floorColor);
       gridHelper.position.y = 0.01;
       scene.add(gridHelper);
@@ -393,7 +457,6 @@
       floor.rotation.x = -Math.PI / 2;
       scene.add(floor);
 
-      // Obstacles
       const mat1 = new THREE.MeshStandardMaterial({ color: boxColor1, roughness: 0.3 });
       const mat2 = new THREE.MeshStandardMaterial({ color: boxColor2, roughness: 0.4 });
       const boxGeo = new THREE.BoxGeometry(5, 5, 5);
@@ -408,7 +471,6 @@
         targets.push(mesh);
       }
 
-      // Camera & 3D Gun Rig Setup
       camera.position.set(0, 1.6, 10);
       
       const gunGroup = new THREE.Group();
@@ -431,15 +493,21 @@
       camera.add(gunGroup);
       scene.add(camera);
 
+      // Remote Player Meshes container dictionary
+      const remoteMeshes = {};
+
       const canvas = document.getElementById('game-canvas');
       canvas.addEventListener('click', () => {
-        canvas.requestPointerLock();
+        const pauseMenu = document.getElementById('pause-menu');
+        if (pauseMenu.classList.contains('hidden')) {
+          canvas.requestPointerLock();
+        }
       });
 
       let yaw = 0;
       let pitch = 0;
       document.addEventListener('mousemove', (e) => {
-        if(document.pointerLockElement !== canvas) return;
+        if(document.pointerLockElement !== canvas || !inGame) return;
         const sensitivity = 0.002;
         yaw -= e.movementX * sensitivity;
         pitch -= e.movementY * sensitivity;
@@ -458,6 +526,7 @@
       let isReloading = false;
 
       document.addEventListener('keydown', (e) => {
+        if(!inGame) return;
         if(e.key === 'w' || e.key === 'W') keys.w = true;
         if(e.key === 'a' || e.key === 'A') keys.a = true;
         if(e.key === 's' || e.key === 'S') keys.s = true;
@@ -480,7 +549,7 @@
       let lastShotTime = 0;
 
       window.addEventListener('mousedown', (e) => {
-        if(document.pointerLockElement !== canvas) return;
+        if(document.pointerLockElement !== canvas || !inGame) return;
         if(e.button === 0) shootWeapon();
       });
 
@@ -533,7 +602,10 @@
         setTimeout(() => { icon.style.opacity = '0'; }, 100);
       }
 
+      let frameCount = 0;
+
       function animate() {
+        if (!inGame) return;
         requestAnimationFrame(animate);
 
         gunGroup.position.z += (-0.45 - gunGroup.position.z) * 0.15;
@@ -567,6 +639,35 @@
 
         camera.position.x = Math.max(-55, Math.min(55, camera.position.x));
         camera.position.z = Math.max(-55, Math.min(55, camera.position.z));
+
+        // Broadcast player position to peers every 3 frames
+        frameCount++;
+        if (frameCount % 3 === 0) {
+          const posData = { type: 'PLAYER_POS', id: myId, x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: yaw };
+          if (isHost) {
+            connections.forEach(c => c.send(posData));
+          } else if (conn && conn.open) {
+            conn.send(posData);
+          }
+        }
+
+        // Render / Update other players' 3D meshes in the scene
+        Object.keys(players).forEach(id => {
+          if (id === myId) return;
+          const p = players[id];
+          if (!remoteMeshes[id]) {
+            // Create a 3D box/capsule representing the remote player
+            const pMat = new THREE.MeshStandardMaterial({ color: p.team === 'blue' ? 0x3b82f6 : 0xef4444 });
+            const pMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), pMat);
+            scene.add(pMesh);
+            remoteMeshes[id] = pMesh;
+          }
+          // Update position smoothly
+          if (p.x !== undefined && p.z !== undefined) {
+            remoteMeshes[id].position.set(p.x, p.y || 1.6, p.z);
+            if (p.yaw !== undefined) remoteMeshes[id].rotation.y = p.yaw;
+          }
+        });
 
         renderer.render(scene, camera);
       }
