@@ -2,833 +2,847 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>DEADSHOT ARENA 3D FPS - P2P Multiplayer</title>
-  <!-- Tailwind CSS -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arcade Central | Retro Gaming Hub</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Three.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <!-- PeerJS for WebRTC -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <!-- FontAwesome Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
   <style>
-    body, html {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      user-select: none;
-      -webkit-user-select: none;
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    body {
+      font-family: 'Inter', sans-serif;
       background-color: #09090b;
       color: #f4f4f5;
     }
-    #game-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
+    .font-pixel {
+      font-family: 'Press Start 2P', monospace;
     }
-    .hitmarker-line {
-      position: absolute;
-      background-color: #ef4444;
-      width: 12px;
-      height: 2px;
-      transform-origin: center;
+    .arcade-card {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    ::-webkit-scrollbar {
-      width: 4px;
+    .arcade-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
     }
-    ::-webkit-scrollbar-thumb {
-      background: #3f3f46;
-      border-radius: 4px;
+    canvas {
+      background-color: #050507;
+      border-radius: 1rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(255, 255, 255, 0.05);
+      touch-action: none;
+    }
+    .glass-panel {
+      background: rgba(24, 24, 27, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
   </style>
 </head>
-<body class="relative w-full h-full">
+<body class="min-h-screen flex flex-col selection:bg-yellow-500 selection:text-black">
 
-  <!-- GAME CANVAS CONTAINER -->
-  <div id="canvas-container" class="absolute inset-0 w-full h-full">
-    <canvas id="game-canvas"></canvas>
-  </div>
-
-  <!-- CROSSHAIR -->
-  <div id="crosshair" class="absolute inset-0 pointer-events-none flex items-center justify-center z-10 hidden">
-    <div id="crosshair-dot" class="w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_4px_rgba(0,0,0,0.8)] transition-transform duration-75"></div>
-  </div>
-
-  <!-- HITMARKER CONTAINER -->
-  <div id="hitmarker-container" class="absolute inset-0 pointer-events-none flex items-center justify-center z-10 hidden">
-    <div class="relative w-8 h-8 opacity-0 transition-opacity duration-150" id="hitmarker-icon">
-      <div class="hitmarker-line absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-45"></div>
-      <div class="hitmarker-line absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45"></div>
-    </div>
-  </div>
-
-  <!-- HUD TOP BAR -->
-  <div id="hud-top" class="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-none flex items-center gap-6 z-10 hidden">
-    <div class="bg-zinc-900/80 backdrop-blur border border-zinc-800 px-6 py-2 rounded-xl flex items-center gap-6 shadow-xl">
-      <div class="flex items-center gap-2">
-        <span class="text-xs uppercase tracking-wider text-blue-400 font-bold">Blue</span>
-        <span id="hud-blue-score" class="text-xl font-black text-white">0</span>
-      </div>
-      <div class="text-zinc-600 font-bold">VS</div>
-      <div class="flex items-center gap-2">
-        <span id="hud-red-score" class="text-xl font-black text-white">0</span>
-        <span class="text-xs uppercase tracking-wider text-red-400 font-bold">Red</span>
-      </div>
-    </div>
-    <div class="bg-zinc-900/80 backdrop-blur border border-zinc-800 px-4 py-2 rounded-xl text-zinc-300 font-mono font-bold shadow-xl">
-      <span id="hud-timer">10:00</span>
-    </div>
-  </div>
-
-  <!-- KILL FEED -->
-  <div id="killfeed" class="absolute top-6 right-6 pointer-events-none flex flex-col items-end gap-2 z-20"></div>
-
-  <!-- HUD BOTTOM BAR -->
-  <div id="hud-bottom" class="absolute bottom-6 left-6 right-6 pointer-events-none flex justify-between items-end z-10 hidden">
-    <div class="bg-zinc-900/80 backdrop-blur border border-zinc-800 p-4 rounded-2xl flex items-center gap-4 shadow-xl min-w-[180px]">
-      <div class="text-red-500 text-2xl"><i class="fa-solid fa-heart-pulse"></i></div>
-      <div>
-        <div class="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Health</div>
-        <div id="hud-hp" class="text-3xl font-black text-white tracking-tight">100</div>
-      </div>
-    </div>
-    <div class="bg-zinc-900/80 backdrop-blur border border-zinc-800 p-4 rounded-2xl flex items-center gap-6 shadow-xl min-w-[200px] justify-between">
-      <div>
-        <div id="hud-weapon-name" class="text-xs uppercase tracking-wider text-blue-400 font-semibold">Assault Rifle</div>
-        <div class="text-3xl font-black text-white tracking-tight flex items-baseline gap-1">
-          <span id="hud-ammo">30</span>
-          <span class="text-sm text-zinc-500 font-medium">/ <span id="hud-reserve">90</span></span>
-        </div>
-      </div>
-      <div class="text-blue-400 text-2xl"><i class="fa-solid fa-gun"></i></div>
-    </div>
-  </div>
-
-  <!-- MAIN MENU OVERLAY -->
-  <div id="menu-screen" class="absolute inset-0 bg-zinc-950/90 backdrop-blur-md flex items-center justify-center z-50">
-    <div class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl w-full max-w-md shadow-2xl flex flex-col gap-6">
-      <div>
-        <h1 class="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">DEADSHOT ARENA</h1>
-        <p class="text-xs text-zinc-400 mt-1">Multiplayer 3D Tactical FPS</p>
-      </div>
-
-      <div class="flex flex-col gap-4">
-        <div>
-          <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Player Name</label>
-          <input id="input-name" type="text" value="Player" maxlength="15" class="w-full mt-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors">
-        </div>
-
-        <div>
-          <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Team</label>
-          <div class="grid grid-cols-2 gap-3 mt-1.5">
-            <button id="btn-team-blue" onclick="setTeam('blue')" class="py-3 rounded-xl border border-blue-500 bg-blue-500/10 text-blue-400 font-bold transition-all cursor-pointer">Blue Team</button>
-            <button id="btn-team-red" onclick="setTeam('red')" class="py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all cursor-pointer">Red Team</button>
-          </div>
-        </div>
-
-        <div>
-          <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Select Map</label>
-          <select id="select-map" class="w-full mt-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
-            <option value="warehouse">⚡ Neon Warehouse (Cyan & Blue)</option>
-            <option value="industrial">🔥 Industrial Yard (Amber & Rust)</option>
-            <option value="maze">🔮 Cyber Maze (Pink & Purple)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-3 mt-2">
-        <button id="btn-host" onclick="hostGame()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
-          <i class="fa-solid fa-server"></i> Create Lobby (Host)
-        </button>
-        <div class="flex gap-2">
-          <input id="input-room-code" type="text" placeholder="Enter Room Code" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white uppercase focus:outline-none focus:border-blue-500 transition-colors">
-          <button id="btn-join" onclick="joinGame()" class="px-6 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-all cursor-pointer">Join</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- LOBBY SCREEN -->
-  <div id="lobby-screen" class="absolute inset-0 bg-zinc-950/90 backdrop-blur-md hidden items-center justify-center z-50">
-    <div class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col gap-6">
-      <div class="flex justify-between items-center">
-        <div>
-          <h2 class="text-2xl font-black text-white">Lobby</h2>
-          <p id="display-selected-map" class="text-xs text-blue-400 font-semibold mt-1">Map: Neon Warehouse</p>
-        </div>
-        <div class="bg-zinc-950 border border-zinc-800 px-4 py-2 rounded-xl">
-          <span class="text-xs text-zinc-500 uppercase block">Room Code</span>
-          <span id="display-room-code" class="text-lg font-mono font-bold text-blue-400">----</span>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-2">
-        <span class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Connected Players</span>
-        <div id="player-list" class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 h-48 overflow-y-auto flex flex-col gap-2"></div>
-      </div>
-
-      <button id="btn-start-game" onclick="startGame()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 transition-all hidden cursor-pointer">
-        Start Match
-      </button>
-      <div id="waiting-host-text" class="text-center text-sm text-zinc-500">Waiting for host to start the match...</div>
-    </div>
-  </div>
-
-  <!-- DEATH SCREEN -->
-  <div id="death-screen" class="absolute inset-0 bg-red-950/40 backdrop-blur-sm hidden items-center justify-center z-40">
-    <div class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl text-center shadow-2xl flex flex-col gap-4 max-w-sm w-full">
-      <h2 class="text-2xl font-black text-red-500 tracking-wider">YOU DIED</h2>
-      <p class="text-xs text-zinc-400">Respawning in <span id="respawn-timer" class="font-bold text-white">3</span>s...</p>
-    </div>
-  </div>
-
-  <!-- IN-GAME PAUSE MENU -->
-  <div id="pause-menu" class="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm hidden items-center justify-center z-50">
-    <div class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col gap-4 text-center">
-      <h2 class="text-2xl font-black text-white tracking-wider">GAME PAUSED</h2>
-      <div class="flex flex-col gap-3 mt-2">
-        <button onclick="resumeGame()" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all cursor-pointer">Resume Game</button>
-        <button onclick="quitToMenu()" class="w-full py-3 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-400 font-bold rounded-xl transition-all cursor-pointer">Quit to Main Menu</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- SCRIPT -->
+  <!-- SOUND CONTROLLER (Web Audio API) -->
   <script>
-    let selectedTeam = 'blue';
-    let selectedMap = 'warehouse';
-    let inGame = false;
-    let myHp = 100;
-    let isDead = false;
-    let blueScore = 0;
-    let redScore = 0;
+    class SoundFx {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+      }
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      }
+      playTone(freq, type = 'sine', duration = 0.1, gainVal = 0.1) {
+        if (this.muted) return;
+        this.init();
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch (e) {}
+      }
+      click() { this.playTone(600, 'sine', 0.05, 0.05); }
+      eat() { this.playTone(800, 'square', 0.08, 0.03); }
+      win() {
+        this.playTone(523.25, 'triangle', 0.1, 0.1);
+        setTimeout(() => this.playTone(659.25, 'triangle', 0.1, 0.1), 100);
+        setTimeout(() => this.playTone(783.99, 'triangle', 0.2, 0.1), 200);
+      }
+      lose() {
+        this.playTone(300, 'sawtooth', 0.15, 0.1);
+        setTimeout(() => this.playTone(200, 'sawtooth', 0.2, 0.1), 150);
+      }
+      shoot() { this.playTone(900, 'sawtooth', 0.05, 0.04); }
+      explosion() { this.playTone(120, 'square', 0.2, 0.1); }
+    }
+    const sound = new SoundFx();
+  </script>
 
-    function setTeam(team) {
-      selectedTeam = team;
-      if(team === 'blue') {
-        document.getElementById('btn-team-blue').className = "py-3 rounded-xl border border-blue-500 bg-blue-500/10 text-blue-400 font-bold transition-all cursor-pointer";
-        document.getElementById('btn-team-red').className = "py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all cursor-pointer";
-      } else {
-        document.getElementById('btn-team-red').className = "py-3 rounded-xl border border-red-500 bg-red-500/10 text-red-400 font-bold transition-all cursor-pointer";
-        document.getElementById('btn-team-blue').className = "py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all cursor-pointer";
+  <!-- NAVIGATION HEADER -->
+  <header class="w-full glass-panel sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b border-zinc-800">
+    <div class="flex items-center gap-3 cursor-pointer" onclick="showDashboard()">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-yellow-500 to-amber-400 flex items-center justify-center text-zinc-950 font-black text-xl shadow-lg shadow-yellow-500/20">
+        <i class="fa-solid fa-gamepad"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-black tracking-wider text-white flex items-center gap-2">
+          ARCADE<span class="text-yellow-400">HUB</span>
+        </h1>
+        <p class="text-xs text-zinc-400 font-medium">Retro Gaming Station</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <!-- Global Highscore Display -->
+      <div class="hidden sm:flex items-center gap-3 bg-zinc-900/90 border border-zinc-800 px-4 py-2 rounded-2xl">
+        <i class="fa-solid fa-trophy text-yellow-400"></i>
+        <div class="text-xs">
+          <div class="text-zinc-400 uppercase font-semibold text-[10px]">Total Score</div>
+          <div id="global-score" class="font-bold text-white text-sm">0</div>
+        </div>
+      </div>
+
+      <!-- Sound Toggle -->
+      <button onclick="toggleAudio()" id="sound-btn" class="w-10 h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center transition cursor-pointer">
+        <i class="fa-solid fa-volume-high"></i>
+      </button>
+
+      <!-- User Profile -->
+      <div class="flex items-center gap-3 pl-2 border-l border-zinc-800">
+        <div class="w-9 h-9 rounded-xl bg-purple-600/30 border border-purple-500/50 flex items-center justify-center text-purple-300 font-bold text-sm">
+          P1
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- DASHBOARD MAIN CONTENT -->
+  <main id="dashboard-view" class="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8 flex flex-col gap-8">
+    
+    <!-- HERO / BANNER -->
+    <section class="relative rounded-3xl overflow-hidden bg-gradient-to-r from-zinc-900 via-purple-950/40 to-zinc-900 border border-zinc-800 p-8 md:p-12">
+      <div class="relative z-10 max-w-2xl flex flex-col gap-4">
+        <span class="px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-xs font-bold w-fit uppercase tracking-wider">
+          <i class="fa-solid fa-bolt mr-1"></i> Ready to play
+        </span>
+        <h2 class="text-3xl md:text-5xl font-black tracking-tight text-white leading-tight">
+          Select Your Game & Break The Highscore.
+        </h2>
+        <p class="text-zinc-400 text-sm md:text-base">
+          Play classic retro titles directly in your browser with multiple AI difficulty levels, touch support, and real-time audio.
+        </p>
+      </div>
+      <div class="absolute right-8 bottom-0 opacity-10 md:opacity-20 text-[180px] text-yellow-500 pointer-events-none select-none">
+        <i class="fa-solid fa-ghost"></i>
+      </div>
+    </section>
+
+    <!-- SEARCH & CATEGORY FILTER BAR -->
+    <section class="flex flex-col md:flex-row gap-4 justify-between items-center">
+      <!-- Search Input -->
+      <div class="relative w-full md:w-80">
+        <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm"></i>
+        <input type="text" id="game-search" oninput="filterGames()" placeholder="Search game..." class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-500/50 transition">
+      </div>
+
+      <!-- Filter Buttons -->
+      <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+        <button onclick="setCategory('all')" class="cat-btn active border px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap bg-yellow-500 text-zinc-950 border-yellow-500" data-cat="all">All Games</button>
+        <button onclick="setCategory('arcade')" class="cat-btn border px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white" data-cat="arcade">Arcade</button>
+        <button onclick="setCategory('strategy')" class="cat-btn border px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white" data-cat="strategy">Strategy</button>
+        <button onclick="setCategory('action')" class="cat-btn border px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white" data-cat="action">Action</button>
+      </div>
+    </section>
+
+    <!-- GAME CARDS GRID -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" id="games-grid">
+
+      <!-- PAC-MAN CARD -->
+      <div class="game-card arcade-card bg-zinc-900 border border-zinc-800/80 rounded-3xl overflow-hidden flex flex-col justify-between" data-title="pacman" data-category="arcade">
+        <div class="h-44 bg-gradient-to-b from-yellow-500/20 to-zinc-950 flex items-center justify-center relative p-6">
+          <i class="fa-solid fa-ghost text-6xl text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.5)]"></i>
+          <span class="absolute top-4 right-4 bg-zinc-900/80 border border-zinc-700 text-zinc-300 text-[10px] uppercase tracking-wider font-extrabold px-3 py-1 rounded-full">Arcade</span>
+        </div>
+        <div class="p-6 flex flex-col gap-4">
+          <div>
+            <h3 class="text-xl font-black text-white">Pac-Man</h3>
+            <p class="text-xs text-zinc-400 mt-1">Navigate maze, eat pellets, and dodge aggressive ghost AI.</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-zinc-500 font-semibold">
+            <i class="fa-solid fa-gauge-high text-yellow-400"></i> 3 Difficulties
+          </div>
+          <button onclick="launchGame('pacman')" class="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-black rounded-xl text-sm transition cursor-pointer shadow-lg shadow-yellow-500/10 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-play"></i> Play Now
+          </button>
+        </div>
+      </div>
+
+      <!-- TIC-TAC-TOE CARD -->
+      <div class="game-card arcade-card bg-zinc-900 border border-zinc-800/80 rounded-3xl overflow-hidden flex flex-col justify-between" data-title="tic-tac-toe" data-category="strategy">
+        <div class="h-44 bg-gradient-to-b from-blue-500/20 to-zinc-950 flex items-center justify-center relative p-6">
+          <i class="fa-solid fa-xmark text-6xl text-blue-400 drop-shadow-[0_0_15px_rgba(96,165,250,0.5)]"></i>
+          <span class="absolute top-4 right-4 bg-zinc-900/80 border border-zinc-700 text-zinc-300 text-[10px] uppercase tracking-wider font-extrabold px-3 py-1 rounded-full">Strategy</span>
+        </div>
+        <div class="p-6 flex flex-col gap-4">
+          <div>
+            <h3 class="text-xl font-black text-white">Tic-Tac-Toe</h3>
+            <p class="text-xs text-zinc-400 mt-1">Challenge unbeatable Minimax AI algorithms or practice easy modes.</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-zinc-500 font-semibold">
+            <i class="fa-solid fa-brain text-blue-400"></i> Easy / Medium / Hard
+          </div>
+          <button onclick="launchGame('tictactoe')" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl text-sm transition cursor-pointer shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-play"></i> Play Now
+          </button>
+        </div>
+      </div>
+
+      <!-- SNAKE CARD -->
+      <div class="game-card arcade-card bg-zinc-900 border border-zinc-800/80 rounded-3xl overflow-hidden flex flex-col justify-between" data-title="snake" data-category="arcade">
+        <div class="h-44 bg-gradient-to-b from-emerald-500/20 to-zinc-950 flex items-center justify-center relative p-6">
+          <i class="fa-solid fa-staff-snake text-6xl text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)]"></i>
+          <span class="absolute top-4 right-4 bg-zinc-900/80 border border-zinc-700 text-zinc-300 text-[10px] uppercase tracking-wider font-extrabold px-3 py-1 rounded-full">Arcade</span>
+        </div>
+        <div class="p-6 flex flex-col gap-4">
+          <div>
+            <h3 class="text-xl font-black text-white">Snake Classic</h3>
+            <p class="text-xs text-zinc-400 mt-1">Grow your snake, avoid boundary walls, and hit highest speeds.</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-zinc-500 font-semibold">
+            <i class="fa-solid fa-bolt text-emerald-400"></i> Speed Progression
+          </div>
+          <button onclick="launchGame('snake')" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-sm transition cursor-pointer shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-play"></i> Play Now
+          </button>
+        </div>
+      </div>
+
+      <!-- SPACE INVADERS CARD -->
+      <div class="game-card arcade-card bg-zinc-900 border border-zinc-800/80 rounded-3xl overflow-hidden flex flex-col justify-between" data-title="space invaders" data-category="action">
+        <div class="h-44 bg-gradient-to-b from-purple-500/20 to-zinc-950 flex items-center justify-center relative p-6">
+          <i class="fa-solid fa-shuttle-space text-6xl text-purple-400 drop-shadow-[0_0_15px_rgba(192,132,252,0.5)]"></i>
+          <span class="absolute top-4 right-4 bg-zinc-900/80 border border-zinc-700 text-zinc-300 text-[10px] uppercase tracking-wider font-extrabold px-3 py-1 rounded-full">Action</span>
+        </div>
+        <div class="p-6 flex flex-col gap-4">
+          <div>
+            <h3 class="text-xl font-black text-white">Space Invaders</h3>
+            <p class="text-xs text-zinc-400 mt-1">Defend earth against descending wave fleets of alien invaders.</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-zinc-500 font-semibold">
+            <i class="fa-solid fa-crosshair text-purple-400"></i> Retro Shooter
+          </div>
+          <button onclick="launchGame('spaceinvaders')" class="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-black rounded-xl text-sm transition cursor-pointer shadow-lg shadow-purple-500/10 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-play"></i> Play Now
+          </button>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- GAME CONTAINER VIEW (FULSCREEN / MODAL LAUNCHER) -->
+  <div id="game-view" class="hidden flex-1 max-w-5xl w-full mx-auto p-4 md:p-6 flex flex-col gap-4">
+    
+    <!-- TOP GAME ACTION BAR -->
+    <div class="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
+      <button onclick="showDashboard()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer transition">
+        <i class="fa-solid fa-arrow-left"></i> Dashboard
+      </button>
+
+      <div class="flex items-center gap-4">
+        <h2 id="active-game-title" class="text-lg font-black text-white tracking-wide uppercase">GAME</h2>
+      </div>
+
+      <!-- Difficulty Selector Dynamic Box -->
+      <div id="difficulty-wrapper" class="flex items-center gap-2">
+        <span class="text-xs font-bold text-zinc-500 uppercase hidden sm:inline">Level:</span>
+        <select id="game-difficulty-select" onchange="changeDifficulty()" class="bg-zinc-950 border border-zinc-800 text-xs font-bold text-white px-3 py-2 rounded-xl focus:outline-none cursor-pointer">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- GAME ARENA WRAPPER -->
+    <div class="relative bg-zinc-900/50 border border-zinc-800/80 rounded-3xl p-4 md:p-8 flex flex-col items-center justify-center min-h-[500px]">
+      
+      <!-- GAME SPECIFIC HEADERS / SCORE LABELS -->
+      <div id="game-hud" class="w-full max-w-md flex justify-between items-center mb-4 px-2">
+        <div class="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+          Current Score: <span id="game-current-score" class="text-yellow-400 font-extrabold text-base ml-1">0</span>
+        </div>
+        <div class="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+          Highscore: <span id="game-high-score" class="text-white font-extrabold text-base ml-1">0</span>
+        </div>
+      </div>
+
+      <!-- CANVAS GAME MOUNT POINT -->
+      <div id="canvas-container" class="relative flex justify-center items-center w-full">
+        <canvas id="main-canvas" width="400" height="400" class="max-w-full h-auto max-h-[70vh]"></canvas>
+
+        <!-- HTML Overlay for Tic Tac Toe -->
+        <div id="ttt-container" class="hidden grid grid-cols-3 gap-3 w-80 h-80">
+          <button onclick="makeTTTMove(0)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(1)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(2)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(3)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(4)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(5)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(6)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(7)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+          <button onclick="makeTTTMove(8)" class="ttt-cell bg-zinc-950 border border-zinc-800 rounded-2xl text-4xl font-black text-white hover:border-blue-500 transition cursor-pointer flex items-center justify-center"></button>
+        </div>
+      </div>
+
+      <!-- TOUCH CONTROLS FOR MOBILE DEVICES -->
+      <div id="mobile-controls" class="mt-6 grid grid-cols-3 gap-2 w-48 sm:hidden">
+        <div></div>
+        <button onclick="triggerKey('ArrowUp')" class="p-4 bg-zinc-800 active:bg-zinc-700 rounded-2xl text-white font-bold flex items-center justify-center"><i class="fa-solid fa-arrow-up"></i></button>
+        <div></div>
+        <button onclick="triggerKey('ArrowLeft')" class="p-4 bg-zinc-800 active:bg-zinc-700 rounded-2xl text-white font-bold flex items-center justify-center"><i class="fa-solid fa-arrow-left"></i></button>
+        <button onclick="triggerKey('Space')" class="p-4 bg-yellow-500 active:bg-yellow-400 text-zinc-950 rounded-2xl font-bold flex items-center justify-center"><i class="fa-solid fa-crosshair"></i></button>
+        <button onclick="triggerKey('ArrowRight')" class="p-4 bg-zinc-800 active:bg-zinc-700 rounded-2xl text-white font-bold flex items-center justify-center"><i class="fa-solid fa-arrow-right"></i></button>
+        <div></div>
+        <button onclick="triggerKey('ArrowDown')" class="p-4 bg-zinc-800 active:bg-zinc-700 rounded-2xl text-white font-bold flex items-center justify-center"><i class="fa-solid fa-arrow-down"></i></button>
+        <div></div>
+      </div>
+
+      <!-- CONTROLS FOOTER HINT -->
+      <div class="mt-4 text-xs font-medium text-zinc-500 flex items-center gap-4">
+        <span><i class="fa-solid fa-keyboard mr-1"></i> Controls: Arrow keys / WASD / Spacebar</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CORE DASHBOARD & GAME ENGINES SCRIPT -->
+  <script>
+    // Global State
+    let activeGame = null;
+    let currentGameScore = 0;
+    let globalTotalScore = parseInt(localStorage.getItem('arcade_global_score') || '0');
+    let highScores = JSON.parse(localStorage.getItem('arcade_high_scores') || '{}');
+    let animationFrameId = null;
+
+    const canvas = document.getElementById('main-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Initialize Header Global Score
+    document.getElementById('global-score').innerText = globalTotalScore;
+
+    function toggleAudio() {
+      sound.muted = !sound.muted;
+      const btn = document.getElementById('sound-btn');
+      btn.innerHTML = sound.muted ? '<i class="fa-solid fa-volume-xmark"></i>' : '<i class="fa-solid fa-volume-high"></i>';
+    }
+
+    function updateScore(points) {
+      currentGameScore += points;
+      globalTotalScore += points;
+      document.getElementById('game-current-score').innerText = currentGameScore;
+      document.getElementById('global-score').innerText = globalTotalScore;
+      localStorage.setItem('arcade_global_score', globalTotalScore);
+
+      if(!highScores[activeGame] || currentGameScore > highScores[activeGame]) {
+        highScores[activeGame] = currentGameScore;
+        localStorage.setItem('arcade_high_scores', JSON.stringify(highScores));
+        document.getElementById('game-high-score').innerText = currentGameScore;
       }
     }
 
-    let peer = null;
-    let conn = null;
-    let connections = [];
-    let isHost = false;
-    let roomId = '';
-    let players = {};
-    let myId = '';
+    /* --- DASHBOARD NAVIGATION & FILTERS --- */
+    function showDashboard() {
+      sound.click();
+      if(animationFrameId) cancelAnimationFrame(animationFrameId);
+      document.getElementById('game-view').classList.add('hidden');
+      document.getElementById('dashboard-view').classList.remove('hidden');
+      activeGame = null;
+    }
 
-    function hostGame() {
-      const btn = document.getElementById('btn-host');
-      btn.innerText = "Connecting to Relay...";
-      const name = document.getElementById('input-name').value || 'Player';
-      selectedMap = document.getElementById('select-map').value;
-      roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-      
-      peer = new Peer('ds-' + roomId);
-      
-      peer.on('open', (id) => {
-        myId = peer.id;
-        isHost = true;
-        players[myId] = { name, team: selectedTeam, hp: 100, score: 0, x: 0, z: 0, yaw: 0 };
-        showLobby();
+    function launchGame(gameId) {
+      sound.click();
+      activeGame = gameId;
+      currentGameScore = 0;
+      document.getElementById('game-current-score').innerText = 0;
+      document.getElementById('game-high-score').innerText = highScores[gameId] || 0;
+
+      document.getElementById('dashboard-view').classList.add('hidden');
+      document.getElementById('game-view').classList.remove('hidden');
+
+      const titleMap = {
+        'pacman': 'Pac-Man',
+        'tictactoe': 'Tic-Tac-Toe',
+        'snake': 'Snake Classic',
+        'spaceinvaders': 'Space Invaders'
+      };
+      document.getElementById('active-game-title').innerText = titleMap[gameId];
+
+      if(animationFrameId) cancelAnimationFrame(animationFrameId);
+
+      // Hide canvas/TTT overlay based on game mode
+      if(gameId === 'tictactoe') {
+        canvas.classList.add('hidden');
+        document.getElementById('ttt-container').classList.remove('hidden');
+        initTTT();
+      } else {
+        canvas.classList.remove('hidden');
+        document.getElementById('ttt-container').classList.add('hidden');
+        if(gameId === 'pacman') initPacman();
+        if(gameId === 'snake') initSnake();
+        if(gameId === 'spaceinvaders') initSpaceInvaders();
+      }
+    }
+
+    function changeDifficulty() {
+      if(activeGame) launchGame(activeGame);
+    }
+
+    function filterGames() {
+      const query = document.getElementById('game-search').value.toLowerCase();
+      const cards = document.querySelectorAll('.game-card');
+      cards.forEach(card => {
+        const title = card.getAttribute('data-title');
+        card.style.display = title.includes(query) ? 'flex' : 'none';
+      });
+    }
+
+    function setCategory(cat) {
+      sound.click();
+      const buttons = document.querySelectorAll('.cat-btn');
+      buttons.forEach(btn => {
+        if(btn.getAttribute('data-cat') === cat) {
+          btn.className = "cat-btn active border px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap bg-yellow-500 text-zinc-950 border-yellow-500";
+        } else {
+          btn.className = "cat-btn border px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white";
+        }
       });
 
-      peer.on('error', (err) => {
-        console.error(err);
-        btn.innerHTML = '<i class="fa-solid fa-server"></i> Create Lobby (Host)';
-        alert('Connection error: ' + err.type + '. Try clicking again.');
+      const cards = document.querySelectorAll('.game-card');
+      cards.forEach(card => {
+        if(cat === 'all' || card.getAttribute('data-category') === cat) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function triggerKey(keyName) {
+      const event = new KeyboardEvent('keydown', { key: keyName });
+      document.dispatchEvent(event);
+    }
+
+
+    /* ==========================================================================
+       1. PAC-MAN GAME ENGINE
+       ========================================================================== */
+    let pX = 9, pY = 16, pDir = {x: 0, y: 0}, pNextDir = {x: 0, y: 0};
+    let pacmanMap = [];
+    let ghosts = [];
+    let pacmanTicks = 0;
+
+    const baseMap = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
+      [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+      [1,3,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,3,1],
+      [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+      [1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1],
+      [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+      [1,1,1,1,2,1,1,1,0,1,0,1,1,1,2,1,1,1,1],
+      [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+      [1,1,1,1,2,1,0,1,1,0,1,1,0,1,2,1,1,1,1],
+      [0,0,0,0,2,0,0,1,0,0,0,1,0,0,2,0,0,0,0],
+      [1,1,1,1,2,1,0,1,1,1,1,1,0,1,2,1,1,1,1],
+      [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+      [1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1],
+      [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
+      [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+      [1,3,2,1,2,2,2,2,2,0,2,2,2,2,2,1,2,3,1],
+      [1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1],
+      [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    function initPacman() {
+      canvas.width = 380; canvas.height = 400;
+      pacmanMap = JSON.parse(JSON.stringify(baseMap));
+      pX = 9; pY = 16; pDir = {x: 0, y: 0}; pNextDir = {x: 0, y: 0};
+      ghosts = [
+        {x: 9, y: 9, color: '#ef4444'},
+        {x: 9, y: 10, color: '#38bdf8'},
+        {x: 8, y: 10, color: '#f472b6'}
+      ];
+      pacmanLoop();
+    }
+
+    function pacmanLoop() {
+      pacmanTicks++;
+      const diff = document.getElementById('game-difficulty-select').value;
+      const speed = diff === 'hard' ? 8 : diff === 'medium' ? 12 : 16;
+
+      if (pacmanTicks % speed === 0) {
+        if (pacmanMap[pY + pNextDir.y]?.[pX + pNextDir.x] !== 1) pDir = pNextDir;
+        if (pacmanMap[pY + pDir.y]?.[pX + pDir.x] !== 1) {
+          pX += pDir.x; pY += pDir.y;
+          if (pX < 0) pX = 18; if (pX > 18) pX = 0;
+        }
+
+        if (pacmanMap[pY][pX] === 2) {
+          pacmanMap[pY][pX] = 0; updateScore(10); sound.eat();
+        } else if (pacmanMap[pY][pX] === 3) {
+          pacmanMap[pY][pX] = 0; updateScore(50); sound.win();
+        }
+
+        ghosts.forEach(g => {
+          const dirs = [{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
+          let valid = dirs.filter(d => pacmanMap[g.y + d.y]?.[g.x + d.x] !== 1);
+          if (valid.length) {
+            let move = valid[Math.floor(Math.random() * valid.length)];
+            g.x += move.x; g.y += move.y;
+          }
+          if (g.x === pX && g.y === pY) {
+            sound.lose();
+            alert("Game Over! Score: " + currentGameScore);
+            initPacman();
+          }
+        });
+      }
+
+      // Draw Map
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      const ts = 20;
+      for (let r=0; r<20; r++) {
+        for (let c=0; c<19; c++) {
+          if (pacmanMap[r][c] === 1) {
+            ctx.fillStyle = '#1e3a8a'; ctx.fillRect(c*ts, r*ts, ts, ts);
+          } else if (pacmanMap[r][c] === 2) {
+            ctx.fillStyle = '#fde047'; ctx.beginPath(); ctx.arc(c*ts+10, r*ts+10, 2, 0, Math.PI*2); ctx.fill();
+          } else if (pacmanMap[r][c] === 3) {
+            ctx.fillStyle = '#fde047'; ctx.beginPath(); ctx.arc(c*ts+10, r*ts+10, 5, 0, Math.PI*2); ctx.fill();
+          }
+        }
+      }
+
+      // Draw Pac-Man
+      ctx.fillStyle = '#facc15'; ctx.beginPath();
+      ctx.arc(pX*ts+10, pY*ts+10, 8, 0.2*Math.PI, 1.8*Math.PI);
+      ctx.lineTo(pX*ts+10, pY*ts+10); ctx.fill();
+
+      // Draw Ghosts
+      ghosts.forEach(g => {
+        ctx.fillStyle = g.color; ctx.beginPath();
+        ctx.arc(g.x*ts+10, g.y*ts+8, 8, Math.PI, 0, false);
+        ctx.fillRect(g.x*ts+2, g.y*ts+8, 16, 8); ctx.fill();
       });
 
-      peer.on('connection', (c) => {
-        connections.push(c);
-        setupConnection(c);
-        c.on('close', () => {
-          connections = connections.filter(item => item !== c);
-          removePlayer(c.peer);
+      if(activeGame === 'pacman') animationFrameId = requestAnimationFrame(pacmanLoop);
+    }
+
+
+    /* ==========================================================================
+       2. TIC-TAC-TOE ENGINE
+       ========================================================================== */
+    let tttBoard = Array(9).fill('');
+    let tttActive = true;
+
+    function initTTT() {
+      tttBoard = Array(9).fill('');
+      tttActive = true;
+      renderTTT();
+    }
+
+    function makeTTTMove(idx) {
+      if (!tttActive || tttBoard[idx] !== '') return;
+      sound.click();
+      tttBoard[idx] = 'X';
+      renderTTT();
+
+      if (checkTTTWin(tttBoard, 'X')) {
+        sound.win(); updateScore(100);
+        setTimeout(() => alert("You Win! +100 Points"), 10);
+        tttActive = false; return;
+      }
+      if (tttBoard.every(c => c !== '')) {
+        sound.click(); setTimeout(() => alert("It's a Draw!"), 10);
+        tttActive = false; return;
+      }
+
+      tttActive = false;
+      setTimeout(aiTTTMove, 300);
+    }
+
+    function aiTTTMove() {
+      const diff = document.getElementById('game-difficulty-select').value;
+      let move;
+
+      if (diff === 'easy') {
+        let empty = tttBoard.map((v, i) => v === '' ? i : null).filter(v => v !== null);
+        move = empty[Math.floor(Math.random() * empty.length)];
+      } else if (diff === 'medium') {
+        move = findTTTWinMove('O') ?? findTTTWinMove('X') ?? getRandomTTTMove();
+      } else {
+        move = getBestTTTMove();
+      }
+
+      if (move !== undefined) tttBoard[move] = 'O';
+      renderTTT();
+
+      if (checkTTTWin(tttBoard, 'O')) {
+        sound.lose(); setTimeout(() => alert("AI Wins!"), 10); tttActive = false;
+      } else if (tttBoard.every(c => c !== '')) {
+        setTimeout(() => alert("It's a Draw!"), 10); tttActive = false;
+      } else {
+        tttActive = true;
+      }
+    }
+
+    function getRandomTTTMove() {
+      let empty = tttBoard.map((v, i) => v === '' ? i : null).filter(v => v !== null);
+      return empty[Math.floor(Math.random() * empty.length)];
+    }
+
+    function findTTTWinMove(player) {
+      for(let i=0; i<9; i++) {
+        if(tttBoard[i] === '') {
+          tttBoard[i] = player;
+          if(checkTTTWin(tttBoard, player)) { tttBoard[i] = ''; return i; }
+          tttBoard[i] = '';
+        }
+      }
+      return null;
+    }
+
+    function getBestTTTMove() {
+      let bestScore = -Infinity, move;
+      for (let i = 0; i < 9; i++) {
+        if (tttBoard[i] === '') {
+          tttBoard[i] = 'O';
+          let score = minimax(tttBoard, 0, false);
+          tttBoard[i] = '';
+          if (score > bestScore) { bestScore = score; move = i; }
+        }
+      }
+      return move;
+    }
+
+    function minimax(board, depth, isMax) {
+      if (checkTTTWin(board, 'O')) return 10 - depth;
+      if (checkTTTWin(board, 'X')) return depth - 10;
+      if (board.every(c => c !== '')) return 0;
+
+      if (isMax) {
+        let best = -Infinity;
+        for (let i = 0; i < 9; i++) {
+          if (board[i] === '') {
+            board[i] = 'O';
+            best = Math.max(best, minimax(board, depth + 1, false));
+            board[i] = '';
+          }
+        }
+        return best;
+      } else {
+        let best = Infinity;
+        for (let i = 0; i < 9; i++) {
+          if (board[i] === '') {
+            board[i] = 'X';
+            best = Math.min(best, minimax(board, depth + 1, true));
+            board[i] = '';
+          }
+        }
+        return best;
+      }
+    }
+
+    function checkTTTWin(b, p) {
+      const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+      return wins.some(w => b[w[0]] === p && b[w[1]] === p && b[w[2]] === p);
+    }
+
+    function renderTTT() {
+      document.querySelectorAll('.ttt-cell').forEach((cell, i) => {
+        cell.innerText = tttBoard[i];
+        cell.style.color = tttBoard[i] === 'X' ? '#3b82f6' : '#ef4444';
+      });
+    }
+
+
+    /* ==========================================================================
+       3. SNAKE GAME ENGINE
+       ========================================================================== */
+    let snake = [], food = {}, snakeDir = {x: 1, y: 0}, snakeTicks = 0;
+
+    function initSnake() {
+      canvas.width = 380; canvas.height = 380;
+      snake = [{x: 8, y: 8}, {x: 7, y: 8}];
+      snakeDir = {x: 1, y: 0};
+      spawnFood();
+      snakeLoop();
+    }
+
+    function spawnFood() {
+      food = {
+        x: Math.floor(Math.random() * 19),
+        y: Math.floor(Math.random() * 19)
+      };
+    }
+
+    function snakeLoop() {
+      snakeTicks++;
+      const diff = document.getElementById('game-difficulty-select').value;
+      const speed = diff === 'hard' ? 6 : diff === 'medium' ? 10 : 14;
+
+      if (snakeTicks % speed === 0) {
+        const head = {x: snake[0].x + snakeDir.x, y: snake[0].y + snakeDir.y};
+
+        // Wall collision
+        if (head.x < 0 || head.x >= 19 || head.y < 0 || head.y >= 19 || snake.some(s => s.x === head.x && s.y === head.y)) {
+          sound.lose();
+          alert("Snake Crashed! Score: " + currentGameScore);
+          initSnake(); return;
+        }
+
+        snake.unshift(head);
+        if (head.x === food.x && head.y === food.y) {
+          updateScore(20); sound.eat(); spawnFood();
+        } else {
+          snake.pop();
+        }
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const ts = 20;
+
+      // Draw Food
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath(); ctx.arc(food.x*ts+10, food.y*ts+10, 8, 0, Math.PI*2); ctx.fill();
+
+      // Draw Snake
+      snake.forEach((segment, i) => {
+        ctx.fillStyle = i === 0 ? '#10b981' : '#34d399';
+        ctx.fillRect(segment.x*ts+1, segment.y*ts+1, ts-2, ts-2);
+      });
+
+      if(activeGame === 'snake') animationFrameId = requestAnimationFrame(snakeLoop);
+    }
+
+
+    /* ==========================================================================
+       4. SPACE INVADERS ENGINE
+       ========================================================================== */
+    let playerX = 180, bullets = [], invaders = [], invaderDir = 1;
+
+    function initSpaceInvaders() {
+      canvas.width = 400; canvas.height = 400;
+      playerX = 180; bullets = []; invaders = []; invaderDir = 1;
+
+      for(let r=0; r<3; r++) {
+        for(let c=0; c<8; c++) {
+          invaders.push({x: c*40 + 40, y: r*30 + 30, alive: true});
+        }
+      }
+      spaceLoop();
+    }
+
+    function spaceLoop() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      // Move & Draw Player
+      ctx.fillStyle = '#c084fc';
+      ctx.fillRect(playerX, 360, 30, 15);
+
+      // Bullets
+      ctx.fillStyle = '#facc15';
+      bullets.forEach((b, bi) => {
+        b.y -= 6;
+        ctx.fillRect(b.x, b.y, 4, 10);
+
+        // Check Hit
+        invaders.forEach(inv => {
+          if (inv.alive && b.x > inv.x && b.x < inv.x + 25 && b.y > inv.y && b.y < inv.y + 20) {
+            inv.alive = false; bullets.splice(bi, 1); updateScore(30); sound.explosion();
+          }
         });
       });
-    }
 
-    function joinGame() {
-      const code = document.getElementById('input-room-code').value.trim().toUpperCase();
-      if(!code) return alert('Enter room code!');
-      const name = document.getElementById('input-name').value || 'Player';
-      
-      peer = new Peer();
-      peer.on('open', (id) => {
-        myId = peer.id;
-        conn = peer.connect('ds-' + code);
-        setupConnection(conn);
+      // Move Invaders
+      let shiftDown = false;
+      const diff = document.getElementById('game-difficulty-select').value;
+      const invSpeed = diff === 'hard' ? 2 : diff === 'medium' ? 1.2 : 0.6;
+
+      invaders.forEach(inv => {
+        if (!inv.alive) return;
+        inv.x += invaderDir * invSpeed;
+        if (inv.x > 360 || inv.x < 10) shiftDown = true;
       });
 
-      peer.on('error', (err) => {
-        console.error(err);
-        alert('Failed to join room: ' + err.type);
-      });
-    }
-
-    function setupConnection(c) {
-      c.on('open', () => {
-        if(!isHost) {
-          showLobby();
-          c.send({ type: 'JOIN', name: document.getElementById('input-name').value, team: selectedTeam });
-        }
-      });
-
-      c.on('close', () => {
-        if(!isHost) quitToMenu();
-      });
-
-      c.on('data', (data) => {
-        if(isHost) {
-          if(data.type === 'JOIN') {
-            players[c.peer] = { name: data.name, team: data.team, hp: 100, score: 0, x: 0, z: 0, yaw: 0 };
-            broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
-            updateLobbyUI();
-          } else if(data.type === 'PLAYER_POS') {
-            if(players[data.id]) {
-              players[data.id].x = data.x;
-              players[data.id].y = data.y;
-              players[data.id].z = data.z;
-              players[data.id].yaw = data.yaw;
-            }
-            broadcastExcluding(data, c);
-          } else if(data.type === 'PLAYER_HIT') {
-            // Host processes damage
-            const target = players[data.targetId];
-            if(target && target.hp > 0) {
-              target.hp -= data.damage;
-              if(target.hp <= 0) {
-                target.hp = 0;
-                const killer = players[data.shooterId];
-                if(killer) {
-                  killer.score++;
-                  if(killer.team === 'blue') blueScore++;
-                  else redScore++;
-                  broadcast({ type: 'KILL_EVENT', killer: killer.name, victim: target.name, blueScore, redScore });
-                }
-              }
-              broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
-            }
-          }
-        } else {
-          if(data.type === 'SYNC_STATE') {
-            players = data.players;
-            if(data.map) selectedMap = data.map;
-            blueScore = data.blueScore || 0;
-            redScore = data.redScore || 0;
-            document.getElementById('hud-blue-score').innerText = blueScore;
-            document.getElementById('hud-red-score').innerText = redScore;
-            if(players[myId]) {
-              myHp = players[myId].hp;
-              document.getElementById('hud-hp').innerText = myHp;
-            }
-            updateLobbyUI();
-          } else if(data.type === 'START_GAME') {
-            if(data.map) selectedMap = data.map;
-            startGameUI();
-          } else if(data.type === 'PLAYER_POS') {
-            if(players[data.id]) {
-              players[data.id].x = data.x;
-              players[data.id].y = data.y;
-              players[data.id].z = data.z;
-              players[data.id].yaw = data.yaw;
-            }
-          } else if(data.type === 'KILL_EVENT') {
-            showKillfeedMessage(data.killer, data.victim);
-          }
-        }
-      });
-    }
-
-    function broadcast(data) {
-      connections.forEach(c => c.send(data));
-    }
-
-    function broadcastExcluding(data, excludeClient) {
-      connections.forEach(c => {
-        if(c !== excludeClient) c.send(data);
-      });
-    }
-
-    function removePlayer(peerId) {
-      if(players[peerId]) {
-        delete players[peerId];
-        broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
-        updateLobbyUI();
+      if (shiftDown) {
+        invaderDir *= -1;
+        invaders.forEach(inv => inv.y += 12);
       }
-    }
 
-    function showLobby() {
-      document.getElementById('menu-screen').classList.add('hidden');
-      document.getElementById('lobby-screen').classList.remove('hidden');
-      document.getElementById('lobby-screen').classList.add('flex');
-      document.getElementById('display-room-code').innerText = roomId || document.getElementById('input-room-code').value;
-      document.getElementById('display-selected-map').innerText = "Map: " + document.getElementById('select-map').selectedOptions[0].text;
-      if(isHost) {
-        document.getElementById('btn-start-game').classList.remove('hidden');
-        document.getElementById('waiting-host-text').classList.add('hidden');
-      }
-      updateLobbyUI();
-    }
+      // Draw Invaders
+      invaders.forEach(inv => {
+        if (!inv.alive) return;
+        ctx.fillStyle = '#a855f7';
+        ctx.fillRect(inv.x, inv.y, 25, 18);
 
-    function updateLobbyUI() {
-      const list = document.getElementById('player-list');
-      list.innerHTML = '';
-      Object.keys(players).forEach(id => {
-        const p = players[id];
-        list.innerHTML += `<div class="flex justify-between items-center bg-zinc-900 p-3 rounded-xl border border-zinc-800"><span class="font-bold text-white">${p.name}</span><span class="text-xs px-2.5 py-1 rounded-lg ${p.team === 'blue' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'} uppercase font-bold">${p.team}</span></div>`;
-      });
-    }
-
-    function startGame() {
-      broadcast({ type: 'START_GAME', map: selectedMap });
-      startGameUI();
-    }
-
-    let matchTime = 600;
-    let timerInterval = null;
-
-    function startTimer() {
-      clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        if (matchTime > 0 && inGame) {
-          matchTime--;
-          const mins = Math.floor(matchTime / 60);
-          const secs = matchTime % 60;
-          document.getElementById('hud-timer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        // Game Over condition
+        if(inv.y >= 340) {
+          sound.lose(); alert("Earth Destroyed! Score: " + currentGameScore);
+          initSpaceInvaders();
         }
-      }, 1000);
+      });
+
+      // Win Condition
+      if(invaders.every(i => !i.alive)) {
+        sound.win(); alert("Victory! Next Wave!"); updateScore(200);
+        initSpaceInvaders();
+      }
+
+      if(activeGame === 'spaceinvaders') animationFrameId = requestAnimationFrame(spaceLoop);
     }
 
-    function startGameUI() {
-      inGame = true;
-      isDead = false;
-      myHp = 100;
-      document.getElementById('menu-screen').classList.add('hidden');
-      document.getElementById('lobby-screen').classList.remove('flex');
-      document.getElementById('lobby-screen').classList.add('hidden');
-      document.getElementById('death-screen').classList.remove('flex');
-      document.getElementById('death-screen').classList.add('hidden');
-      document.getElementById('crosshair').classList.remove('hidden');
-      document.getElementById('hud-top').classList.remove('hidden');
-      document.getElementById('hud-bottom').classList.remove('hidden');
-      document.getElementById('hitmarker-container').classList.remove('hidden');
-      startTimer();
-      initThreeJS(selectedMap);
-    }
 
-    function resumeGame() {
-      document.getElementById('pause-menu').classList.remove('flex');
-      document.getElementById('pause-menu').classList.add('hidden');
-      const canvas = document.getElementById('game-canvas');
-      canvas.requestPointerLock();
-    }
+    /* ==========================================================================
+       GLOBAL KEYBOARD CONTROLLER
+       ========================================================================== */
+    document.addEventListener('keydown', e => {
+      if(!activeGame) return;
 
-    function quitToMenu() {
-      inGame = false;
-      clearInterval(timerInterval);
-      if(peer) peer.destroy();
-      document.getElementById('pause-menu').classList.remove('flex');
-      document.getElementById('pause-menu').classList.add('hidden');
-      document.getElementById('death-screen').classList.remove('flex');
-      document.getElementById('death-screen').classList.add('hidden');
-      document.getElementById('crosshair').classList.add('hidden');
-      document.getElementById('hud-top').classList.add('hidden');
-      document.getElementById('hud-bottom').classList.add('hidden');
-      document.getElementById('hitmarker-container').classList.add('hidden');
-      document.getElementById('menu-screen').classList.remove('hidden');
-      document.getElementById('btn-host').innerHTML = '<i class="fa-solid fa-server"></i> Create Lobby (Host)';
-    }
+      // Pacman Controls
+      if(activeGame === 'pacman') {
+        if(e.key === 'ArrowUp' || e.key === 'w') pNextDir = {x: 0, y: -1};
+        if(e.key === 'ArrowDown' || e.key === 's') pNextDir = {x: 0, y: 1};
+        if(e.key === 'ArrowLeft' || e.key === 'a') pNextDir = {x: -1, y: 0};
+        if(e.key === 'ArrowRight' || e.key === 'd') pNextDir = {x: 1, y: 0};
+      }
 
-    function showKillfeedMessage(killer, victim) {
-      const feed = document.getElementById('killfeed');
-      const item = document.createElement('div');
-      item.className = "bg-zinc-900/90 border border-zinc-800 px-4 py-1.5 rounded-lg text-xs font-semibold text-zinc-300 shadow-lg animate-fade-in";
-      item.innerHTML = `<span class="text-blue-400">${killer}</span> <span class="text-zinc-500">eliminated</span> <span class="text-red-400">${victim}</span>`;
-      feed.appendChild(item);
-      setTimeout(() => { item.remove(); }, 3500);
-    }
+      // Snake Controls
+      if(activeGame === 'snake') {
+        if((e.key === 'ArrowUp' || e.key === 'w') && snakeDir.y === 0) snakeDir = {x: 0, y: -1};
+        if((e.key === 'ArrowDown' || e.key === 's') && snakeDir.y === 0) snakeDir = {x: 0, y: 1};
+        if((e.key === 'ArrowLeft' || e.key === 'a') && snakeDir.x === 0) snakeDir = {x: -1, y: 0};
+        if((e.key === 'ArrowRight' || e.key === 'd') && snakeDir.x === 0) snakeDir = {x: 1, y: 0};
+      }
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && inGame && !isDead) {
-        const pauseMenu = document.getElementById('pause-menu');
-        if (pauseMenu.classList.contains('hidden')) {
-          pauseMenu.classList.remove('hidden');
-          pauseMenu.classList.add('flex');
-        } else {
-          resumeGame();
+      // Space Invaders Controls
+      if(activeGame === 'spaceinvaders') {
+        if((e.key === 'ArrowLeft' || e.key === 'a') && playerX > 0) playerX -= 15;
+        if((e.key === 'ArrowRight' || e.key === 'd') && playerX < 370) playerX += 15;
+        if(e.key === ' ' || e.key === 'Space' || e.key === 'ArrowUp') {
+          sound.shoot();
+          bullets.push({x: playerX + 13, y: 360});
         }
       }
     });
-
-    // Sound Synthesizer
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playShootSound() {
-      if(audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.15);
-    }
-
-    function initThreeJS(mapType) {
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-
-      let floorColor = 0x27272a, boxColor1 = 0x0ea5e9, boxColor2 = 0x3b82f6, ambientVal = 0x60a5fa, fogVal = 0x09090b;
-
-      if (mapType === 'industrial') {
-        floorColor = 0x292524;
-        boxColor1 = 0xf97316;
-        boxColor2 = 0xd97706;
-        ambientVal = 0xfb923c;
-        fogVal = 0x0c0a09;
-      } else if (mapType === 'maze') {
-        floorColor = 0x18181b;
-        boxColor1 = 0xec4899;
-        boxColor2 = 0x8b5cf6;
-        ambientVal = 0xf472b6;
-        fogVal = 0x09090b;
-      }
-
-      scene.background = new THREE.Color(fogVal);
-      scene.fog = new THREE.FogExp2(fogVal, 0.015);
-
-      const ambientLight = new THREE.AmbientLight(ambientVal, 0.7);
-      scene.add(ambientLight);
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-      dirLight.position.set(30, 50, 30);
-      scene.add(dirLight);
-
-      const gridHelper = new THREE.GridHelper(120, 40, boxColor1, floorColor);
-      gridHelper.position.y = 0.01;
-      scene.add(gridHelper);
-
-      const floorGeo = new THREE.PlaneGeometry(120, 120);
-      const floorMat = new THREE.MeshStandardMaterial({ color: floorColor, roughness: 0.7 });
-      const floor = new THREE.Mesh(floorGeo, floorMat);
-      floor.rotation.x = -Math.PI / 2;
-      scene.add(floor);
-
-      const mat1 = new THREE.MeshStandardMaterial({ color: boxColor1, roughness: 0.3 });
-      const mat2 = new THREE.MeshStandardMaterial({ color: boxColor2, roughness: 0.4 });
-      const boxGeo = new THREE.BoxGeometry(5, 5, 5);
-      const targets = [];
-
-      for(let i = 0; i < 22; i++) {
-        const mesh = new THREE.Mesh(boxGeo, i % 2 === 0 ? mat1 : mat2);
-        const x = (Math.random() - 0.5) * 80;
-        const z = (Math.random() - 0.5) * 80;
-        mesh.position.set(x, 2.5, z);
-        scene.add(mesh);
-        targets.push(mesh);
-      }
-
-      camera.position.set((Math.random() - 0.5) * 40, 1.6, (Math.random() - 0.5) * 40);
-      
-      const gunGroup = new THREE.Group();
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8, roughness: 0.2 });
-      const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.6), bodyMat);
-      gunBody.position.set(0, 0, 0);
-      gunGroup.add(gunBody);
-
-      const barrelMat = new THREE.MeshStandardMaterial({ color: 0x09090b, metalness: 0.9, roughness: 0.1 });
-      const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5), barrelMat);
-      gunBarrel.rotation.x = Math.PI / 2;
-      gunBarrel.position.set(0, 0.04, -0.45);
-      gunGroup.add(gunBarrel);
-
-      const muzzleFlash = new THREE.PointLight(0xffaa00, 0, 5);
-      muzzleFlash.position.set(0, 0.04, -0.7);
-      gunGroup.add(muzzleFlash);
-
-      gunGroup.position.set(0.28, -0.25, -0.45);
-      camera.add(gunGroup);
-      scene.add(camera);
-
-      const remoteMeshes = {};
-
-      const canvas = document.getElementById('game-canvas');
-      canvas.addEventListener('click', () => {
-        const pauseMenu = document.getElementById('pause-menu');
-        if (pauseMenu.classList.contains('hidden') && !isDead) {
-          canvas.requestPointerLock();
-        }
-      });
-
-      let yaw = 0;
-      let pitch = 0;
-      document.addEventListener('mousemove', (e) => {
-        if(document.pointerLockElement !== canvas || !inGame || isDead) return;
-        const sensitivity = 0.002;
-        yaw -= e.movementX * sensitivity;
-        pitch -= e.movementY * sensitivity;
-        pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
-        
-        camera.rotation.order = 'YXZ';
-        camera.rotation.y = yaw;
-        camera.rotation.x = pitch;
-      });
-
-      const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
-      let velocityY = 0;
-      let isGrounded = true;
-      let ammo = 30;
-      let reserve = 90;
-      let isReloading = false;
-
-      document.addEventListener('keydown', (e) => {
-        if(!inGame || isDead) return;
-        if(e.key === 'w' || e.key === 'W') keys.w = true;
-        if(e.key === 'a' || e.key === 'A') keys.a = true;
-        if(e.key === 's' || e.key === 'S') keys.s = true;
-        if(e.key === 'd' || e.key === 'D') keys.d = true;
-        if(e.code === 'Space') keys.space = true;
-        if(e.key === 'Shift') keys.shift = true;
-        if(e.key === 'r' || e.key === 'R') reloadWeapon();
-      });
-
-      document.addEventListener('keyup', (e) => {
-        if(e.key === 'w' || e.key === 'W') keys.w = false;
-        if(e.key === 'a' || e.key === 'A') keys.a = false;
-        if(e.key === 's' || e.key === 'S') keys.s = false;
-        if(e.key === 'd' || e.key === 'D') keys.d = false;
-        if(e.code === 'Space') keys.space = false;
-        if(e.key === 'Shift') keys.shift = false;
-      });
-
-      const raycaster = new THREE.Raycaster();
-      let lastShotTime = 0;
-
-      window.addEventListener('mousedown', (e) => {
-        if(document.pointerLockElement !== canvas || !inGame || isDead) return;
-        if(e.button === 0) shootWeapon();
-      });
-
-      function shootWeapon() {
-        if(ammo <= 0 || isReloading) return;
-        const now = performance.now();
-        if(now - lastShotTime < 120) return;
-        lastShotTime = now;
-
-        ammo--;
-        document.getElementById('hud-ammo').innerText = ammo;
-        playShootSound();
-
-        gunGroup.position.z = -0.38;
-        gunGroup.rotation.x = 0.15;
-        muzzleFlash.intensity = 3;
-        setTimeout(() => { muzzleFlash.intensity = 0; }, 40);
-
-        // Raycast against obstacles & remote player meshes
-        const playerObjects = Object.values(remoteMeshes);
-        const intersects = raycaster.intersectObjects(targets.concat(playerObjects));
-        
-        if(intersects.length > 0) {
-          showHitmarker();
-          const hitObj = intersects[0].object;
-          if(hitObj.userData && hitObj.userData.playerId) {
-            // Hit a player
-            const targetId = hitObj.userData.playerId;
-            const hitData = { type: 'PLAYER_HIT', targetId: targetId, shooterId: myId, damage: 25 };
-            if(isHost) {
-              // Host handles directly
-              const target = players[targetId];
-              if(target && target.hp > 0) {
-                target.hp -= 25;
-                if(target.hp <= 0) {
-                  target.hp = 0;
-                  const killer = players[myId];
-                  if(killer) {
-                    killer.score++;
-                    if(killer.team === 'blue') blueScore++;
-                    else redScore++;
-                    broadcast({ type: 'KILL_EVENT', killer: killer.name, victim: target.name, blueScore, redScore });
-                    showKillfeedMessage(killer.name, target.name);
-                  }
-                }
-                broadcast({ type: 'SYNC_STATE', players, map: selectedMap, blueScore, redScore });
-              }
-            } else if(conn && conn.open) {
-              conn.send(hitData);
-            }
-          } else {
-            // Hit box obstacle
-            hitObj.material.color.setHex(0xef4444);
-            setTimeout(() => { hitObj.material.color.setHex(boxColor1); }, 150);
-          }
-        }
-      }
-
-      function reloadWeapon() {
-        if(isReloading || ammo === 30 || reserve <= 0) return;
-        isReloading = true;
-        document.getElementById('hud-weapon-name').innerText = "Reloading...";
-        
-        setTimeout(() => {
-          const needed = 30 - ammo;
-          const added = Math.min(needed, reserve);
-          ammo += added;
-          reserve -= added;
-          document.getElementById('hud-ammo').innerText = ammo;
-          document.getElementById('hud-reserve').innerText = reserve;
-          document.getElementById('hud-weapon-name').innerText = "Assault Rifle";
-          isReloading = false;
-        }, 1200);
-      }
-
-      function showHitmarker() {
-        const icon = document.getElementById('hitmarker-icon');
-        icon.style.opacity = '1';
-        setTimeout(() => { icon.style.opacity = '0'; }, 100);
-      }
-
-      function triggerDeath() {
-        isDead = true;
-        document.exitPointerLock();
-        document.getElementById('death-screen').classList.remove('hidden');
-        document.getElementById('death-screen').classList.add('flex');
-        
-        let secondsLeft = 3;
-        document.getElementById('respawn-timer').innerText = secondsLeft;
-        const countdown = setInterval(() => {
-          secondsLeft--;
-          document.getElementById('respawn-timer').innerText = secondsLeft;
-          if(secondsLeft <= 0) {
-            clearInterval(countdown);
-            respawnPlayer();
-          }
-        }, 1000);
-      }
-
-      function respawnPlayer() {
-        isDead = false;
-        myHp = 100;
-        document.getElementById('hud-hp').innerText = myHp;
-        document.getElementById('death-screen').classList.remove('flex');
-        document.getElementById('death-screen').classList.add('hidden');
-        camera.position.set((Math.random() - 0.5) * 40, 1.6, (Math.random() - 0.5) * 40);
-        canvas.requestPointerLock();
-      }
-
-      let frameCount = 0;
-
-      function animate() {
-        if (!inGame) return;
-        requestAnimationFrame(animate);
-
-        if (!isDead) {
-          gunGroup.position.z += (-0.45 - gunGroup.position.z) * 0.15;
-          gunGroup.rotation.x += (0 - gunGroup.rotation.x) * 0.15;
-
-          const speed = keys.shift ? 0.16 : 0.095;
-          const moveDir = new THREE.Vector3();
-          if(keys.w) moveDir.z -= 1;
-          if(keys.s) moveDir.z += 1;
-          if(keys.a) moveDir.x -= 1;
-          if(keys.d) moveDir.x += 1;
-          moveDir.normalize();
-          moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-
-          camera.position.x += moveDir.x * speed;
-          camera.position.z += moveDir.z * speed;
-
-          if(keys.space && isGrounded) {
-            velocityY = 0.18;
-            isGrounded = false;
-          }
-
-          camera.position.y += velocityY;
-          if(camera.position.y > 1.6) {
-            velocityY -= 0.009;
-          } else {
-            camera.position.y = 1.6;
-            velocityY = 0;
-            isGrounded = true;
-          }
-
-          camera.position.x = Math.max(-55, Math.min(55, camera.position.x));
-          camera.position.z = Math.max(-55, Math.min(55, camera.position.z));
-        }
-
-        // Broadcast position & check HP sync
-        frameCount++;
-        if (frameCount % 3 === 0 && !isDead) {
-          const posData = { type: 'PLAYER_POS', id: myId, x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: yaw };
-          if (isHost) {
-            connections.forEach(c => c.send(posData));
-            if(players[myId]) {
-              players[myId].hp = myHp;
-              players[myId].x = camera.position.x;
-              players[myId].y = camera.position.y;
-              players[myId].z = camera.position.z;
-              players[myId].yaw = yaw;
-            }
-          } else if (conn && conn.open) {
-            conn.send(posData);
-          }
-        }
-
-        // Check local death state
-        if (players[myId] && players[myId].hp <= 0 && !isDead) {
-          triggerDeath();
-        }
-
-        // Render remote players & cleanup disconnected ones
-        const activeIds = Object.keys(players);
-        Object.keys(remoteMeshes).forEach(id => {
-          if (!activeIds.includes(id)) {
-            scene.remove(remoteMeshes[id]);
-            delete remoteMeshes[id];
-          }
-        });
-
-        activeIds.forEach(id => {
-          if (id === myId) return;
-          const p = players[id];
-          if (!remoteMeshes[id]) {
-            const pMat = new THREE.MeshStandardMaterial({ color: p.team === 'blue' ? 0x3b82f6 : 0xef4444 });
-            const pMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), pMat);
-            pMesh.userData = { playerId: id };
-            scene.add(pMesh);
-            remoteMeshes[id] = pMesh;
-          }
-          if (p.x !== undefined && p.z !== undefined) {
-            remoteMeshes[id].position.set(p.x, p.y || 1.6, p.z);
-            if (p.yaw !== undefined) remoteMeshes[id].rotation.y = p.yaw;
-          }
-        });
-
-        renderer.render(scene, camera);
-      }
-      animate();
-
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      });
-    }
   </script>
 </body>
 </html>
