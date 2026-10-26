@@ -130,7 +130,7 @@
       </div>
 
       <div class="flex flex-col gap-3 mt-2">
-        <button onclick="hostGame()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
+        <button id="btn-host" onclick="hostGame()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
           <i class="fa-solid fa-server"></i> Create Lobby (Host)
         </button>
         <div class="flex gap-2">
@@ -190,4 +190,177 @@
     let myId = '';
 
     function hostGame() {
-      const name = document.getElementById('input-
+      const btn = document.getElementById('btn-host');
+      btn.innerText = "Connecting to Relay...";
+      const name = document.getElementById('input-name').value || 'Player';
+      roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      peer = new Peer('ds-' + roomId);
+      
+      peer.on('open', (id) => {
+        myId = peer.id;
+        isHost = true;
+        players[myId] = { name, team: selectedTeam, hp: 100, score: 0 };
+        showLobby();
+      });
+
+      peer.on('error', (err) => {
+        console.error(err);
+        btn.innerHTML = '<i class="fa-solid fa-server"></i> Create Lobby (Host)';
+        alert('Connection error: ' + err.type + '. Try clicking again.');
+      });
+
+      peer.on('connection', (c) => {
+        connections.push(c);
+        setupConnection(c);
+      });
+    }
+
+    function joinGame() {
+      const code = document.getElementById('input-room-code').value.trim().toUpperCase();
+      if(!code) return alert('Enter room code!');
+      const name = document.getElementById('input-name').value || 'Player';
+      
+      peer = new Peer();
+      peer.on('open', (id) => {
+        myId = peer.id;
+        conn = peer.connect('ds-' + code);
+        setupConnection(conn);
+      });
+
+      peer.on('error', (err) => {
+        console.error(err);
+        alert('Failed to join room: ' + err.type);
+      });
+    }
+
+    function setupConnection(c) {
+      c.on('open', () => {
+        if(!isHost) {
+          showLobby();
+          c.send({ type: 'JOIN', name: document.getElementById('input-name').value, team: selectedTeam });
+        }
+      });
+
+      c.on('data', (data) => {
+        if(isHost) {
+          if(data.type === 'JOIN') {
+            players[c.peer] = { name: data.name, team: data.team, hp: 100, score: 0 };
+            broadcast({ type: 'SYNC_PLAYERS', players });
+            updateLobbyUI();
+          }
+        } else {
+          if(data.type === 'SYNC_PLAYERS') {
+            players = data.players;
+            updateLobbyUI();
+          } else if(data.type === 'START_GAME') {
+            startGameUI();
+          }
+        }
+      });
+    }
+
+    function broadcast(data) {
+      connections.forEach(c => c.send(data));
+    }
+
+    function showLobby() {
+      document.getElementById('menu-screen').classList.add('hidden');
+      document.getElementById('lobby-screen').classList.remove('hidden');
+      document.getElementById('lobby-screen').classList.add('flex');
+      document.getElementById('display-room-code').innerText = roomId || document.getElementById('input-room-code').value;
+      if(isHost) {
+        document.getElementById('btn-start-game').classList.remove('hidden');
+        document.getElementById('waiting-host-text').classList.add('hidden');
+      }
+      updateLobbyUI();
+    }
+
+    function updateLobbyUI() {
+      const list = document.getElementById('player-list');
+      list.innerHTML = '';
+      Object.keys(players).forEach(id => {
+        const p = players[id];
+        list.innerHTML += `<div class="flex justify-between items-center bg-zinc-900 p-3 rounded-xl border border-zinc-800"><span class="font-bold text-white">${p.name}</span><span class="text-xs px-2.5 py-1 rounded-lg ${p.team === 'blue' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'} uppercase font-bold">${p.team}</span></div>`;
+      });
+    }
+
+    function startGame() {
+      broadcast({ type: 'START_GAME' });
+      startGameUI();
+    }
+
+    function startGameUI() {
+      document.getElementById('lobby-screen').classList.remove('flex');
+      document.getElementById('lobby-screen').classList.add('hidden');
+      document.getElementById('crosshair').classList.remove('hidden');
+      document.getElementById('hud-top').classList.remove('hidden');
+      document.getElementById('hud-bottom').classList.remove('hidden');
+      initThreeJS();
+    }
+
+    function initThreeJS() {
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x09090b);
+      scene.fog = new THREE.FogExp2(0x09090b, 0.015);
+
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(20, 40, 20);
+      scene.add(dirLight);
+
+      const floorGeo = new THREE.PlaneGeometry(100, 100);
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.8 });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+
+      const boxGeo = new THREE.BoxGeometry(4, 4, 4);
+      const boxMat = new THREE.MeshStandardMaterial({ color: 0x27272a });
+      for(let i = 0; i < 15; i++) {
+        const box = new THREE.Mesh(boxGeo, boxMat);
+        box.position.set((Math.random() - 0.5) * 60, 2, (Math.random() - 0.5) * 60);
+        scene.add(box);
+      }
+
+      camera.position.set(0, 1.6, 5);
+
+      const canvas = document.getElementById('game-canvas');
+      canvas.addEventListener('click', () => {
+        canvas.requestPointerLock();
+      });
+
+      let yaw = 0;
+      let pitch = 0;
+      document.addEventListener('mousemove', (e) => {
+        if(document.pointerLockElement !== canvas) return;
+        const sensitivity = 0.002;
+        yaw -= e.movementX * sensitivity;
+        pitch -= e.movementY * sensitivity;
+        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+        
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = yaw;
+        camera.rotation.x = pitch;
+      });
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+  </script>
+</body>
+</html>
