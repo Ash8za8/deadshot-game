@@ -126,14 +126,14 @@
         <div>
           <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Team</label>
           <div class="grid grid-cols-2 gap-3 mt-1.5">
-            <button id="btn-team-blue" onclick="setTeam('blue')" class="py-3 rounded-xl border border-blue-500 bg-blue-500/10 text-blue-400 font-bold transition-all">Blue Team</button>
-            <button id="btn-team-red" onclick="setTeam('red')" class="py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all">Red Team</button>
+            <button id="btn-team-blue" onclick="setTeam('blue')" class="py-3 rounded-xl border border-blue-500 bg-blue-500/10 text-blue-400 font-bold transition-all cursor-pointer">Blue Team</button>
+            <button id="btn-team-red" onclick="setTeam('red')" class="py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all cursor-pointer">Red Team</button>
           </div>
         </div>
 
         <div>
           <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Select Map</label>
-          <select id="select-map" class="w-full mt-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors">
+          <select id="select-map" class="w-full mt-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
             <option value="warehouse">⚡ Neon Warehouse (Cyan & Blue)</option>
             <option value="industrial">🔥 Industrial Yard (Amber & Rust)</option>
             <option value="maze">🔮 Cyber Maze (Pink & Purple)</option>
@@ -147,7 +147,7 @@
         </button>
         <div class="flex gap-2">
           <input id="input-room-code" type="text" placeholder="Enter Room Code" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white uppercase focus:outline-none focus:border-blue-500 transition-colors">
-          <button onclick="joinGame()" class="px-6 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-all cursor-pointer">Join</button>
+          <button id="btn-join" onclick="joinGame()" class="px-6 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-all cursor-pointer">Join</button>
         </div>
       </div>
     </div>
@@ -187,11 +187,11 @@
     function setTeam(team) {
       selectedTeam = team;
       if(team === 'blue') {
-        document.getElementById('btn-team-blue').className = "py-3 rounded-xl border border-blue-500 bg-blue-500/10 text-blue-400 font-bold transition-all";
-        document.getElementById('btn-team-red').className = "py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all";
+        document.getElementById('btn-team-blue').className = "py-3 rounded-xl border border-blue-500 bg-blue-500/10 text-blue-400 font-bold transition-all cursor-pointer";
+        document.getElementById('btn-team-red').className = "py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all cursor-pointer";
       } else {
-        document.getElementById('btn-team-red').className = "py-3 rounded-xl border border-red-500 bg-red-500/10 text-red-400 font-bold transition-all";
-        document.getElementById('btn-team-blue').className = "py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all";
+        document.getElementById('btn-team-red').className = "py-3 rounded-xl border border-red-500 bg-red-500/10 text-red-400 font-bold transition-all cursor-pointer";
+        document.getElementById('btn-team-blue').className = "py-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 font-bold transition-all cursor-pointer";
       }
     }
 
@@ -308,6 +308,21 @@
       startGameUI();
     }
 
+    let matchTime = 600; // 10 minutes in seconds
+    let timerInterval = null;
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (matchTime > 0) {
+          matchTime--;
+          const mins = Math.floor(matchTime / 60);
+          const secs = matchTime % 60;
+          document.getElementById('hud-timer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+      }, 1000);
+    }
+
     function startGameUI() {
       document.getElementById('lobby-screen').classList.remove('flex');
       document.getElementById('lobby-screen').classList.add('hidden');
@@ -315,10 +330,11 @@
       document.getElementById('hud-top').classList.remove('hidden');
       document.getElementById('hud-bottom').classList.remove('hidden');
       document.getElementById('hitmarker-container').classList.remove('hidden');
+      startTimer();
       initThreeJS(selectedMap);
     }
 
-    // Sound Synthesizer (No external audio files needed!)
+    // Sound Synthesizer
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playShootSound() {
       if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -396,31 +412,25 @@
       camera.position.set(0, 1.6, 10);
       
       const gunGroup = new THREE.Group();
-      
-      // Gun Receiver
       const bodyMat = new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8, roughness: 0.2 });
       const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.6), bodyMat);
       gunBody.position.set(0, 0, 0);
       gunGroup.add(gunBody);
 
-      // Gun Barrel
       const barrelMat = new THREE.MeshStandardMaterial({ color: 0x09090b, metalness: 0.9, roughness: 0.1 });
       const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5), barrelMat);
       gunBarrel.rotation.x = Math.PI / 2;
       gunBarrel.position.set(0, 0.04, -0.45);
       gunGroup.add(gunBarrel);
 
-      // Muzzle Flash Light
       const muzzleFlash = new THREE.PointLight(0xffaa00, 0, 5);
       muzzleFlash.position.set(0, 0.04, -0.7);
       gunGroup.add(muzzleFlash);
 
-      // Position Gun relative to camera (Right-handed FPS style)
       gunGroup.position.set(0.28, -0.25, -0.45);
       camera.add(gunGroup);
       scene.add(camera);
 
-      // Mouse & Pointer Lock
       const canvas = document.getElementById('game-canvas');
       canvas.addEventListener('click', () => {
         canvas.requestPointerLock();
@@ -440,7 +450,6 @@
         camera.rotation.x = pitch;
       });
 
-      // Controls state
       const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
       let velocityY = 0;
       let isGrounded = true;
@@ -459,123 +468,4 @@
       });
 
       document.addEventListener('keyup', (e) => {
-        if(e.key === 'w' || e.key === 'W') keys.w = false;
-        if(e.key === 'a' || e.key === 'A') keys.a = false;
-        if(e.key === 's' || e.key === 'S') keys.s = false;
-        if(e.key === 'd' || e.key === 'D') keys.d = false;
-        if(e.code === 'Space') keys.space = false;
-        if(e.key === 'Shift') keys.shift = false;
-      });
-
-      // Shooting & Raycasting
-      const raycaster = new THREE.Raycaster();
-      let lastShotTime = 0;
-
-      window.addEventListener('mousedown', (e) => {
-        if(document.pointerLockElement !== canvas) return;
-        if(e.button === 0) shootWeapon(); // Left Click
-      });
-
-      function shootWeapon() {
-        if(ammo <= 0 || isReloading) return;
-        const now = performance.now();
-        if(now - lastShotTime < 120) return; // Fire rate limiter
-        lastShotTime = now;
-
-        ammo--;
-        document.getElementById('hud-ammo').innerText = ammo;
-        playShootSound();
-
-        // Recoil animation
-        gunGroup.position.z = -0.38;
-        gunGroup.rotation.x = 0.15;
-        muzzleFlash.intensity = 3;
-        setTimeout(() => { muzzleFlash.intensity = 0; }, 40);
-
-        // Raycast Bullet hit detection
-        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-        const intersects = raycaster.intersectObjects(targets);
-        
-        if(intersects.length > 0) {
-          showHitmarker();
-          const target = intersects[0].object;
-          target.material.color.setHex(0xef4444);
-          setTimeout(() => { target.material.color.setHex(boxColor1); }, 150);
-        }
-      }
-
-      function reloadWeapon() {
-        if(isReloading || ammo === 30 || reserve <= 0) return;
-        isReloading = true;
-        document.getElementById('hud-weapon-name').innerText = "Reloading...";
-        
-        setTimeout(() => {
-          const needed = 30 - ammo;
-          const added = Math.min(needed, reserve);
-          ammo += added;
-          reserve -= added;
-          document.getElementById('hud-ammo').innerText = ammo;
-          document.getElementById('hud-reserve').innerText = reserve;
-          document.getElementById('hud-weapon-name').innerText = "Assault Rifle";
-          isReloading = false;
-        }, 1200);
-      }
-
-      function showHitmarker() {
-        const icon = document.getElementById('hitmarker-icon');
-        icon.style.opacity = '1';
-        setTimeout(() => { icon.style.opacity = '0'; }, 100);
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-
-        // Smooth gun recoil recovery
-        gunGroup.position.z += (-0.45 - gunGroup.position.z) * 0.15;
-        gunGroup.rotation.x += (0 - gunGroup.rotation.x) * 0.15;
-
-        // WASD Movement
-        const speed = keys.shift ? 0.16 : 0.095;
-        const moveDir = new THREE.Vector3();
-        if(keys.w) moveDir.z -= 1;
-        if(keys.s) moveDir.z += 1;
-        if(keys.a) moveDir.x -= 1;
-        if(keys.d) moveDir.x += 1;
-        moveDir.normalize();
-        moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-
-        camera.position.x += moveDir.x * speed;
-        camera.position.z += moveDir.z * speed;
-
-        // Jumping & Gravity Physics
-        if(keys.space && isGrounded) {
-          velocityY = 0.18;
-          isGrounded = false;
-        }
-
-        camera.position.y += velocityY;
-        if(camera.position.y > 1.6) {
-          velocityY -= 0.009; // Gravity pull
-        } else {
-          camera.position.y = 1.6;
-          velocityY = 0;
-          isGrounded = true;
-        }
-
-        // Boundary Limits
-        camera.position.x = Math.max(-55, Math.min(55, camera.position.x));
-        camera.position.z = Math.max(-55, Math.min(55, camera.position.z));
-
-        renderer.render(scene, camera);
-      }
-      animate();
-
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      });
-    }
-  </script>
-</body>
-</html>
+        if(e.key === '
